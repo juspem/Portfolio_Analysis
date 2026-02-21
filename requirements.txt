@@ -1,0 +1,8 @@
+jupyter
+pandas
+yfinance
+numpy
+matplotlib
+quantstats
+seaborn
+plotly

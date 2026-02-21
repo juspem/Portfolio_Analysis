@@ -1,0 +1,5 @@
+tools/.ipynb_checkpoints/
+.ipynb_checkpoints
+.__pycache__
+.portfolio_report.html
+.venv
