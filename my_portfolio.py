@@ -29,3 +29,9 @@ print('Monthly Investment:', monthly_investment)
 # Set to None to use historical return, or set a custom value (e.g., 0.07 for 7%)
 custom_annualized_return = 0.10
 print('Custom Annualized Return:', custom_annualized_return)
+
+# Safe Withdrawal Rate (SWR) for Financial Independence calculations
+# The percentage of portfolio that can be withdrawn annually in retirement
+# Set to 0 to disable SWR-based FI goal calculations
+safe_withdrawal_rate = 0
+print('Safe Withdrawal Rate:', safe_withdrawal_rate)
