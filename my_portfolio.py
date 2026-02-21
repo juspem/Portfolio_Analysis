@@ -18,3 +18,9 @@ print('End Date  :', end_date)
 # Define the risk-free rate:
 risk_free_rate = 0.02
 print('Risk-free Rate:', risk_free_rate)
+
+# Investment amounts for FI calculations
+initial_investment = 10000  # Initial portfolio value in dollars
+monthly_investment = 200    # Monthly contribution in dollars
+print('Initial Investment:', initial_investment)
+print('Monthly Investment:', monthly_investment)
