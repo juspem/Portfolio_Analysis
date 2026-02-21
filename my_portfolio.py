@@ -21,6 +21,11 @@ print('Risk-free Rate:', risk_free_rate)
 
 # Investment amounts for FI calculations
 initial_investment = 10000  # Initial portfolio value in dollars
-monthly_investment = 200    # Monthly contribution in dollars
+monthly_investment = 400    # Monthly contribution in dollars
 print('Initial Investment:', initial_investment)
 print('Monthly Investment:', monthly_investment)
+
+# Custom annualized return for FI forecasting (optional override)
+# Set to None to use historical return, or set a custom value (e.g., 0.07 for 7%)
+custom_annualized_return = 0.10
+print('Custom Annualized Return:', custom_annualized_return)
