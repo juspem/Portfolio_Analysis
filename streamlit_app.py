@@ -156,7 +156,17 @@ with st.sidebar:
     custom_annualized_return = st.slider("Custom annual return (forecast)", 0.0, 30.0, float(_p.custom_annualized_return * 100) if _p.custom_annualized_return else 0.0, 0.5, format="%.1f%%") / 100
     safe_withdrawal_rate     = st.slider("Safe withdrawal rate (SWR)", 0.0, 10.0, float(_p.safe_withdrawal_rate * 100), 0.1, format="%.1f%%") / 100
 
-    run = st.button("Run Analysis", type="primary", use_container_width=True)
+    # Tarkista avainmuutos ENNEN nappia
+    _key = (tickers_input, weights_input, start_date, end_date, benchmark_ticker)
+    if st.session_state.get("_last_key") != _key:
+        st.session_state["_last_key"] = _key
+        st.session_state["analysis_run"] = False
+
+    # Nappi päivittää tilan
+    if st.button("Run Analysis", type="primary", use_container_width=True):
+        st.session_state["analysis_run"] = True
+
+    run = st.session_state.get("analysis_run", False)
 
     st.markdown('<div class="section-header">Save Configuration</div>', unsafe_allow_html=True)
     if st.button("Save changes to my_portfolio", use_container_width=True):
@@ -226,10 +236,17 @@ with st.spinner("Fetching market data..."):
 # Align columns to ticker order
 if len(tickers) > 1:
     available = [t for t in tickers if t in data.columns]
+
+    if len(available) == 0:
+        st.error("Yhtään tickeriä ei saatu ladattua. Tarkista yhteys ja tickerien nimet.")
+        st.stop()
+
     data = data[available]
     w_aligned = np.array([weights_raw[tickers.index(t)] for t in available])
+    w_aligned = w_aligned / w_aligned.sum()
 else:
-    w_aligned = weights
+    w_aligned = np.array(weights_raw)
+    w_aligned = w_aligned / w_aligned.sum()
 
 # Returns
 returns           = data.pct_change(fill_method=None).dropna(how='all').fillna(0)
@@ -865,148 +882,163 @@ with tab_alloc:
 # TAB 6 – CORRELATIONS
 # ══════════════════════════════════════════════════════════════════════════════
 with tab_corr:
-    st.markdown('<div class="section-header">Correlation Matrix</div>', unsafe_allow_html=True)
+    @st.fragment
+    def render_correlations():
+        st.markdown('<div class="section-header">Correlation Matrix</div>', unsafe_allow_html=True)
 
-    monthly_r = (1 + returns).resample('ME').prod() - 1
-    corr_mat  = round(monthly_r.corr(), 2)
+        monthly_r = (1 + returns).resample('ME').prod() - 1
+        corr_mat  = round(monthly_r.corr(), 2)
 
-    fig, ax = plt.subplots(figsize=(max(5, len(tickers)), max(4, len(tickers) - 1)))
-    sns.heatmap(corr_mat, annot=True, fmt=".2f", cmap='coolwarm',
-                vmin=-1, vmax=1, linewidths=0.5, linecolor='#0f0f0f',
-                annot_kws={'size': 10}, ax=ax,
-                cbar_kws={'label': 'Correlation'})
-    ax.set_title("Monthly Return Correlation")
-    apply_style(fig, [ax])
-    st.pyplot(fig)
-    plt.close()
-
-    if len(tickers) >= 2:
-        st.markdown('<div class="section-header">36-Month Rolling Correlation</div>', unsafe_allow_html=True)
-        window_size = st.slider("Rolling window (months)", 6, 60, 36)
-        fig, ax = plt.subplots(figsize=(12, 4))
-        color_cycle = [ACCENT, ACCENT3, ACCENT4, ACCENT2, '#b19cd9']
-        for i, (t1, t2) in enumerate(combinations(available, 2)):
-            rc = monthly_r[t1].rolling(window_size).corr(monthly_r[t2])
-            ax.plot(rc, label=f"{t1} vs {t2}",
-                    linewidth=2, color=color_cycle[i % len(color_cycle)])
-        ax.axhline(0,  color='#555', linewidth=0.5)
-        ax.axhline(1,  color='#333', linewidth=0.5, linestyle='--')
-        ax.axhline(-1, color='#333', linewidth=0.5, linestyle='--')
-        ax.set_ylim(-1.05, 1.05)
-        ax.set_ylabel("Correlation")
-        ax.set_title(f"{window_size}-Month Rolling Correlation")
-        ax.legend(fontsize=9, loc='lower left')
+        fig, ax = plt.subplots(figsize=(max(5, len(tickers)), max(4, len(tickers) - 1)))
+        sns.heatmap(corr_mat, annot=True, fmt=".2f", cmap='coolwarm',
+                    vmin=-1, vmax=1, linewidths=0.5, linecolor='#0f0f0f',
+                    annot_kws={'size': 10}, ax=ax,
+                    cbar_kws={'label': 'Correlation'})
+        ax.set_title("Monthly Return Correlation")
         apply_style(fig, [ax])
         st.pyplot(fig)
         plt.close()
 
+        if len(tickers) >= 2:
+            st.markdown('<div class="section-header">36-Month Rolling Correlation</div>', unsafe_allow_html=True)
+            window_size = st.slider("Rolling window (months)", 6, 60, 36)
+            fig, ax = plt.subplots(figsize=(12, 4))
+            color_cycle = [ACCENT, ACCENT3, ACCENT4, ACCENT2, '#b19cd9']
+            for i, (t1, t2) in enumerate(combinations(available, 2)):
+                rc = monthly_r[t1].rolling(window_size).corr(monthly_r[t2])
+                ax.plot(rc, label=f"{t1} vs {t2}",
+                        linewidth=2, color=color_cycle[i % len(color_cycle)])
+            ax.axhline(0,  color='#555', linewidth=0.5)
+            ax.axhline(1,  color='#333', linewidth=0.5, linestyle='--')
+            ax.axhline(-1, color='#333', linewidth=0.5, linestyle='--')
+            ax.set_ylim(-1.05, 1.05)
+            ax.set_ylabel("Correlation")
+            ax.set_title(f"{window_size}-Month Rolling Correlation")
+            ax.legend(fontsize=9, loc='lower left')
+            apply_style(fig, [ax])
+            st.pyplot(fig)
+            plt.close()
+
+    render_correlations()
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 7 – FI FORECAST
 # ══════════════════════════════════════════════════════════════════════════════
 with tab_fi:
-    st.markdown('<div class="section-header">Financial Independence Forecast</div>', unsafe_allow_html=True)
+    @st.fragment
+    def render_fi():
+        st.markdown('<div class="section-header">Financial Independence Forecast</div>', unsafe_allow_html=True)
 
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        lean_fi  = st.number_input("Lean FI annual spend ($k)",  10, 500, 50)
-    with col2:
-        safe_fi  = st.number_input("Safe FI annual spend ($k)",  10, 500, 100)
-    with col3:
-        cozy_fi  = st.number_input("Cozy FI annual spend ($k)",  10, 500, 175)
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            lean_fi  = st.number_input("Lean FI annual spend ($k)",  10, 500, 50)
+        with col2:
+            safe_fi  = st.number_input("Safe FI annual spend ($k)",  10, 500, 100)
+        with col3:
+            cozy_fi  = st.number_input("Cozy FI annual spend ($k)",  10, 500, 175)
 
-    hist_return = ann_return(p_ret)
-    use_return  = custom_annualized_return if custom_annualized_return > 0 else hist_return
+        hist_return = ann_return(p_ret)
+        use_return  = custom_annualized_return if custom_annualized_return > 0 else hist_return
 
-    # Project 40 years
-    months      = 40 * 12
-    values      = [initial_investment / 1000]
-    monthly_ret = (1 + use_return) ** (1/12) - 1
-    for _ in range(months):
-        values.append(values[-1] * (1 + monthly_ret) + monthly_investment / 1000)
+        # Project 40 years
+        months      = 40 * 12
+        values      = [initial_investment / 1000]
+        monthly_ret = (1 + use_return) ** (1/12) - 1
+        for _ in range(months):
+            values.append(values[-1] * (1 + monthly_ret) + monthly_investment / 1000)
 
-    from datetime import date
-    proj_dates = pd.date_range(datetime.today(), periods=months + 1, freq='MS')
-    proj_series = pd.Series(values, index=proj_dates)
+        from datetime import date
+        proj_dates = pd.date_range(datetime.today(), periods=months + 1, freq='MS')
+        proj_series = pd.Series(values, index=proj_dates)
 
-    fig, ax = plt.subplots(figsize=(12, 5))
-    ax.plot(proj_series.index, proj_series.values,
-            color=ACCENT, linewidth=2, label="Projected Net Worth")
-    ax.fill_between(proj_series.index, 0, proj_series.values, alpha=0.1, color=ACCENT)
+        fig, ax = plt.subplots(figsize=(12, 5))
+        ax.plot(proj_series.index, proj_series.values,
+                color=ACCENT, linewidth=2, label="Projected Net Worth")
+        ax.fill_between(proj_series.index, 0, proj_series.values, alpha=0.1, color=ACCENT)
 
-    if safe_withdrawal_rate > 0:
-        for target, label, color in [
-            (lean_fi / safe_withdrawal_rate, f"Lean FI (${lean_fi}k/yr)", ACCENT3),
-            (safe_fi / safe_withdrawal_rate, f"Safe FI (${safe_fi}k/yr)", ACCENT),
-            (cozy_fi / safe_withdrawal_rate, f"Cozy FI (${cozy_fi}k/yr)", ACCENT4),
-        ]:
-            ax.axhline(target, color=color, linewidth=1.5, linestyle='--', label=label)
-            # Mark crossing
-            cross = proj_series[proj_series >= target]
-            if not cross.empty:
-                ax.scatter([cross.index[0]], [cross.iloc[0]],
-                           color=color, s=60, zorder=5)
+        if safe_withdrawal_rate > 0:
+            for target, label, color in [
+                (lean_fi / safe_withdrawal_rate, f"Lean FI (${lean_fi}k/yr)", ACCENT3),
+                (safe_fi / safe_withdrawal_rate, f"Safe FI (${safe_fi}k/yr)", ACCENT),
+                (cozy_fi / safe_withdrawal_rate, f"Cozy FI (${cozy_fi}k/yr)", ACCENT4),
+            ]:
+                ax.axhline(target, color=color, linewidth=1.5, linestyle='--', label=label)
+                # Mark crossing
+                cross = proj_series[proj_series >= target]
+                if not cross.empty:
+                    ax.scatter([cross.index[0]], [cross.iloc[0]],
+                            color=color, s=60, zorder=5)
 
-    ax.set_ylabel("Net Worth ($k)")
-    ax.set_title(f"40-Year Forecast — {use_return:.1%} annual return, ${monthly_investment}/month contribution")
-    ax.legend(fontsize=9)
-    apply_style(fig, [ax])
-    st.pyplot(fig)
-    plt.close()
+        ax.set_ylabel("Net Worth ($k)")
+        ax.set_title(f"40-Year Forecast — {use_return:.1%} annual return, ${monthly_investment}/month contribution")
+        ax.legend(fontsize=9)
+        apply_style(fig, [ax])
+        st.pyplot(fig)
+        plt.close()
 
-    # FI table
-    if safe_withdrawal_rate > 0:
-        st.markdown('<div class="section-header">FI Goals</div>', unsafe_allow_html=True)
-        fi_rows = []
-        for label, spend in [("Lean", lean_fi), ("Safe", safe_fi), ("Cozy", cozy_fi)]:
-            target = spend / safe_withdrawal_rate
-            cross  = proj_series[proj_series >= target]
-            years  = (cross.index[0] - datetime.today()).days / 365 if not cross.empty else None
-            fi_rows.append({
-                "Goal":              label,
-                "Annual Spend ($k)": spend,
-                "Required NW ($k)":  f"{target:.0f}",
-                "Years to Goal":     f"{years:.1f}" if years else "40+ years",
-            })
-        st.dataframe(pd.DataFrame(fi_rows), use_container_width=True, hide_index=True)
-    else:
-        st.info("Set Safe Withdrawal Rate > 0 in the sidebar to see FI goals.")
+        # FI table
+        if safe_withdrawal_rate > 0:
+            st.markdown('<div class="section-header">FI Goals</div>', unsafe_allow_html=True)
+            fi_rows = []
+            for label, spend in [("Lean", lean_fi), ("Safe", safe_fi), ("Cozy", cozy_fi)]:
+                target = spend / safe_withdrawal_rate
+                cross  = proj_series[proj_series >= target]
+                years  = (cross.index[0] - datetime.today()).days / 365 if not cross.empty else None
+                fi_rows.append({
+                    "Goal":              label,
+                    "Annual Spend ($k)": spend,
+                    "Required NW ($k)":  f"{target:.0f}",
+                    "Years to Goal":     f"{years:.1f}" if years else "40+ years",
+                })
+            st.dataframe(pd.DataFrame(fi_rows), use_container_width=True, hide_index=True)
+        else:
+            st.info("Set Safe Withdrawal Rate > 0 in the sidebar to see FI goals.")
 
-    # Monte Carlo
-    st.markdown('<div class="section-header">Monte Carlo Simulation (500 paths)</div>', unsafe_allow_html=True)
-    n_sim    = 500
-    n_months = 20 * 12
-    mc_paths = []
-    mu_m     = (1 + use_return) ** (1/12) - 1
-    sig_m    = ann_vol(p_ret) / np.sqrt(12)
-    for _ in range(n_sim):
-        path = [initial_investment / 1000]
-        for _ in range(n_months):
-            r = np.random.normal(mu_m, sig_m)
-            path.append(path[-1] * (1 + r) + monthly_investment / 1000)
-        mc_paths.append(path)
+        # Monte Carlo
+        st.markdown('<div class="section-header">Monte Carlo Simulation</div>', unsafe_allow_html=True)
 
-    mc_arr   = np.array(mc_paths)
-    mc_dates = pd.date_range(datetime.today(), periods=n_months + 1, freq='MS')
+        mc_col1, mc_col2, mc_col3 = st.columns(3)
+        with mc_col1:
+            n_sim        = st.number_input("Number of simulations", 100, 5000, 500, step=100)
+        with mc_col2:
+            n_years      = st.number_input("Forecast horizon (years)", 5, 50, 20, step=5)
+        with mc_col3:
+            n_paths_plot = st.number_input("Paths shown in chart", 10, 500, 100, step=10)
 
-    fig, ax = plt.subplots(figsize=(12, 5))
-    for path in mc_paths[:100]:
-        ax.plot(mc_dates, path, alpha=0.05, color=ACCENT, linewidth=0.8)
-    p10  = np.percentile(mc_arr, 10,  axis=0)
-    p50  = np.percentile(mc_arr, 50,  axis=0)
-    p90  = np.percentile(mc_arr, 90,  axis=0)
-    ax.plot(mc_dates, p50, color=ACCENT,  linewidth=2, label="Median")
-    ax.plot(mc_dates, p10, color=ACCENT2, linewidth=1.5, linestyle='--', label="10th pct")
-    ax.plot(mc_dates, p90, color=ACCENT3, linewidth=1.5, linestyle='--', label="90th pct")
-    ax.fill_between(mc_dates, p10, p90, alpha=0.1, color=ACCENT)
-    ax.set_ylabel("Net Worth ($k)")
-    ax.set_title("20-Year Monte Carlo Simulation")
-    ax.legend(fontsize=9)
-    apply_style(fig, [ax])
-    st.pyplot(fig)
-    plt.close()
+        n_months = n_years * 12
+        mc_paths = []
+        mu_m     = (1 + use_return) ** (1/12) - 1
+        sig_m    = ann_vol(p_ret) / np.sqrt(12)
+        for _ in range(n_sim):
+            path = [initial_investment / 1000]
+            for _ in range(n_months):
+                r = np.random.normal(mu_m, sig_m)
+                path.append(path[-1] * (1 + r) + monthly_investment / 1000)
+            mc_paths.append(path)
 
-    st.caption(f"Final value at 20 years — Median: ${p50[-1]:.0f}k  |  10th pct: ${p10[-1]:.0f}k  |  90th pct: ${p90[-1]:.0f}k")
+        mc_arr   = np.array(mc_paths)
+        mc_dates = pd.date_range(datetime.today(), periods=n_months + 1, freq='MS')
+
+        fig, ax = plt.subplots(figsize=(12, 5))
+        for path in mc_paths[:n_paths_plot]:
+            ax.plot(mc_dates, path, alpha=0.05, color=ACCENT, linewidth=0.8)
+        p10  = np.percentile(mc_arr, 10,  axis=0)
+        p50  = np.percentile(mc_arr, 50,  axis=0)
+        p90  = np.percentile(mc_arr, 90,  axis=0)
+        ax.plot(mc_dates, p50, color=ACCENT,  linewidth=2, label="Median")
+        ax.plot(mc_dates, p10, color=ACCENT2, linewidth=1.5, linestyle='--', label="10th pct")
+        ax.plot(mc_dates, p90, color=ACCENT3, linewidth=1.5, linestyle='--', label="90th pct")
+        ax.fill_between(mc_dates, p10, p90, alpha=0.1, color=ACCENT)
+        ax.set_ylabel("Net Worth ($k)")
+        ax.set_title(f"{n_years}-Year Monte Carlo Simulation ({int(n_sim)} paths)")
+        ax.legend(fontsize=9)
+        apply_style(fig, [ax])
+        st.pyplot(fig)
+        plt.close()
+
+        st.caption(f"Final value at {n_years} years — Median: ${p50[-1]:.0f}k  |  10th pct: ${p10[-1]:.0f}k  |  90th pct: ${p90[-1]:.0f}k")
+
+    render_fi()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
