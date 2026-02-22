@@ -230,9 +230,10 @@ def sharpe(r, rf=risk_free_rate):
     return excess / vol if vol > 0 else np.nan
 
 def sortino(r, rf=risk_free_rate):
-    excess      = ann_return(r) - rf
-    downside    = r[r < 0].std() * np.sqrt(252)
-    return excess / downside if downside > 0 else np.nan
+    excess = ann_return(r) - rf
+    downside_returns = np.where(r < 0, r, 0)
+    downside_vol = np.sqrt(np.mean(downside_returns**2)) * np.sqrt(252)
+    return excess / downside_vol if downside_vol > 0 else np.nan
 
 def max_drawdown(r):
     cum  = (1 + r).cumprod()
@@ -747,7 +748,7 @@ with tab_alloc:
 with tab_corr:
     st.markdown('<div class="section-header">Correlation Matrix</div>', unsafe_allow_html=True)
 
-    monthly_r = returns.resample('ME').sum()
+    monthly_r = (1 + returns).resample('ME').prod() - 1
     corr_mat  = round(monthly_r.corr(), 2)
 
     fig, ax = plt.subplots(figsize=(max(5, len(tickers)), max(4, len(tickers) - 1)))
@@ -799,9 +800,9 @@ with tab_fi:
     use_return  = custom_annualized_return if custom_annualized_return > 0 else hist_return
 
     # Project 40 years
-    months       = 40 * 12
-    values       = [initial_investment / 1000]
-    monthly_ret  = (1 + use_return) ** (1/12) - 1
+    months      = 40 * 12
+    values      = [initial_investment / 1000]
+    monthly_ret = (1 + returns).resample('ME').prod() - 1
     for _ in range(months):
         values.append(values[-1] * (1 + monthly_ret) + monthly_investment / 1000)
 
