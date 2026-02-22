@@ -16,6 +16,8 @@ import tempfile
 
 warnings.filterwarnings('ignore')
 
+import my_portfolio as _p
+
 # ── Page config ──────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="Portfolio Analysis",
@@ -134,25 +136,25 @@ with st.sidebar:
     st.markdown("## Portfolio Analysis")
     st.markdown('<div class="section-header">Holdings</div>', unsafe_allow_html=True)
 
-    tickers_input  = st.text_input("Tickers (comma-separated)", "FLX5.DE,FLXI.DE,MANTA.HE,EURUSD=X")
-    weights_input  = st.text_input("Weights (comma-separated)", "0.698,0.169,0.124,0.009")
+    tickers_input  = st.text_input("Tickers (comma-separated)", ",".join(_p.tickers))
+    weights_input  = st.text_input("Weights (comma-separated)", ",".join(str(w) for w in _p.weights))
     asset_class_input = st.text_input(
         "Asset classes (comma-separated)",
-        "International ETF,International ETF,Stock,Cash"
+        ",".join(_p.asset_classes.values())
     )
 
     st.markdown('<div class="section-header">Date Range</div>', unsafe_allow_html=True)
-    start_date = st.date_input("Start date", date(1997, 1, 1), min_value=date(1980, 1, 1), max_value=date.today()).strftime('%Y-%m-%d')
-    end_date   = st.date_input("End date",   date.today() - timedelta(days=1), min_value=date(1980, 1, 1), max_value=date.today()).strftime('%Y-%m-%d')
+    start_date = st.date_input("Start date", date.fromisoformat(_p.start_date), min_value=date(1980, 1, 1), max_value=date.today()).strftime('%Y-%m-%d')
+    end_date   = st.date_input("End date", date.fromisoformat(_p.end_date), min_value=date(1980, 1, 1), max_value=date.today()).strftime('%Y-%m-%d')
     st.caption(f"End date: {end_date}")
 
     st.markdown('<div class="section-header">Parameters</div>', unsafe_allow_html=True)
-    risk_free_rate           = st.slider("Risk-free rate",           0.0, 10.0, 2.0, 0.1, format="%.1f%%") / 100
+    risk_free_rate           = st.slider("Risk-free rate",           0.0, 10.0, float(_p.risk_free_rate * 100), 0.1, format="%.1f%%") / 100
     benchmark_ticker         = st.text_input("Benchmark ticker", "SPY")
-    initial_investment       = st.number_input("Initial investment ($)", 1000, 10_000_000, 10_000, step=500)
-    monthly_investment       = st.number_input("Monthly contribution ($)", 0, 50_000, 400, step=100)
-    custom_annualized_return = st.slider("Custom annual return (forecast)", 0.0, 30.0, 10.0, 0.5, format="%.1f%%") / 100
-    safe_withdrawal_rate     = st.slider("Safe withdrawal rate (SWR)", 0.0, 10.0, 3.5, 0.1, format="%.1f%%") / 100
+    initial_investment       = st.number_input("Initial investment ($)", 1000, 10_000_000, _p.initial_investment, step=500)
+    monthly_investment       = st.number_input("Monthly contribution ($)", 0, 50_000, _p.monthly_investment, step=100)
+    custom_annualized_return = st.slider("Custom annual return (forecast)", 0.0, 30.0, float(_p.custom_annualized_return * 100) if _p.custom_annualized_return else 0.0, 0.5, format="%.1f%%") / 100
+    safe_withdrawal_rate     = st.slider("Safe withdrawal rate (SWR)", 0.0, 10.0, float(_p.safe_withdrawal_rate * 100), 0.1, format="%.1f%%") / 100
 
     run = st.button("Run Analysis", type="primary", use_container_width=True)
 

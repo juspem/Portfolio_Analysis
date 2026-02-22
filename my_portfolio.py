@@ -10,7 +10,7 @@ print('Portfolio:', portfolio)
 asset_classes = dict(zip(tickers, ['International ETF', 'International ETF', 'Stock', 'Cash']))
 
 # Define the start date and end date
-start_date = '1997-01-01'
+start_date = '2000-01-01'
 end_date = (datetime.today() - timedelta(days=1)).strftime('%Y-%m-%d')
 print('Start Date:', start_date)
 print('End Date  :', end_date)
