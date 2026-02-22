@@ -17,6 +17,27 @@ import tempfile
 warnings.filterwarnings('ignore')
 
 import my_portfolio as _p
+import json
+
+# ── Load user config (overrides my_portfolio.py without touching it) ──────────
+_CONFIG_FILE = os.path.join(os.path.dirname(__file__), "portfolio_config.json")
+
+def _load_config():
+    """Load saved config. Falls back to my_portfolio defaults if not found."""
+    if os.path.exists(_CONFIG_FILE):
+        with open(_CONFIG_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return {}
+
+def _save_config(cfg: dict):
+    with open(_CONFIG_FILE, "w", encoding="utf-8") as f:
+        json.dump(cfg, f, indent=2, ensure_ascii=False)
+
+_cfg = _load_config()
+
+# Helper: pick from saved config, else fall back to my_portfolio attribute
+def _cv(key, default):
+    return _cfg.get(key, default)
 
 # ── Page config ──────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -136,25 +157,25 @@ with st.sidebar:
     st.markdown("## Portfolio Analysis")
     st.markdown('<div class="section-header">Holdings</div>', unsafe_allow_html=True)
 
-    tickers_input  = st.text_input("Tickers (comma-separated)", ",".join(_p.tickers))
-    weights_input  = st.text_input("Weights (comma-separated)", ",".join(str(w) for w in _p.weights))
+    tickers_input  = st.text_input("Tickers (comma-separated)", _cv("tickers_input", ",".join(_p.tickers)))
+    weights_input  = st.text_input("Weights (comma-separated)", _cv("weights_input", ",".join(str(w) for w in _p.weights)))
     asset_class_input = st.text_input(
         "Asset classes (comma-separated)",
-        ",".join(_p.asset_classes.values())
+        _cv("asset_class_input", ",".join(_p.asset_classes.values()))
     )
 
     st.markdown('<div class="section-header">Date Range</div>', unsafe_allow_html=True)
-    start_date = st.date_input("Start date", date.fromisoformat(_p.start_date), min_value=date(1980, 1, 1), max_value=date.today()).strftime('%Y-%m-%d')
+    start_date = st.date_input("Start date", date.fromisoformat(_cv("start_date", _p.start_date)), min_value=date(1980, 1, 1), max_value=date.today()).strftime('%Y-%m-%d')
     end_date   = st.date_input("End date",   date.today() - timedelta(days=1), min_value=date(1980, 1, 1), max_value=date.today()).strftime('%Y-%m-%d')
     st.caption(f"End date: {end_date}")
 
     st.markdown('<div class="section-header">Parameters</div>', unsafe_allow_html=True)
-    risk_free_rate           = st.slider("Risk-free rate",           0.0, 10.0, float(_p.risk_free_rate * 100), 0.1, format="%.1f%%") / 100
-    benchmark_ticker         = st.text_input("Benchmark ticker", "SPY")
-    initial_investment       = st.number_input("Initial investment ($)", 1000, 10_000_000, _p.initial_investment, step=500)
-    monthly_investment       = st.number_input("Monthly contribution ($)", 0, 50_000, _p.monthly_investment, step=100)
-    custom_annualized_return = st.slider("Custom annual return (forecast)", 0.0, 30.0, float(_p.custom_annualized_return * 100) if _p.custom_annualized_return else 0.0, 0.5, format="%.1f%%") / 100
-    safe_withdrawal_rate     = st.slider("Safe withdrawal rate (SWR)", 0.0, 10.0, float(_p.safe_withdrawal_rate * 100), 0.1, format="%.1f%%") / 100
+    risk_free_rate           = st.slider("Risk-free rate",           0.0, 10.0, float(_cv("risk_free_rate", _p.risk_free_rate) * 100), 0.1, format="%.1f%%") / 100
+    benchmark_ticker         = st.text_input("Benchmark ticker", _cv("benchmark_ticker", "SPY"))
+    initial_investment       = st.number_input("Initial investment ($)", 1000, 10_000_000, _cv("initial_investment", _p.initial_investment), step=500)
+    monthly_investment       = st.number_input("Monthly contribution ($)", 0, 50_000, _cv("monthly_investment", _p.monthly_investment), step=100)
+    custom_annualized_return = st.slider("Custom annual return (forecast)", 0.0, 30.0, float(_cv("custom_annualized_return", _p.custom_annualized_return or 0) * 100), 0.5, format="%.1f%%") / 100
+    safe_withdrawal_rate     = st.slider("Safe withdrawal rate (SWR)", 0.0, 10.0, float(_cv("safe_withdrawal_rate", _p.safe_withdrawal_rate) * 100), 0.1, format="%.1f%%") / 100
 
     # Tarkista avainmuutos ENNEN nappia
     _key = (tickers_input, weights_input, start_date, end_date, benchmark_ticker)
@@ -169,27 +190,24 @@ with st.sidebar:
     run = st.session_state.get("analysis_run", False)
 
     st.markdown('<div class="section-header">Save Configuration</div>', unsafe_allow_html=True)
-    if st.button("Save changes to my_portfolio", use_container_width=True):
-        content = f"""from datetime import datetime, timedelta
-
-        tickers = {[t.strip() for t in tickers_input.split(",") if t.strip()]}
-        weights = {[float(w.strip()) for w in weights_input.split(",") if w.strip()]}
-        portfolio = dict(zip(tickers, weights))
-
-        asset_classes = dict(zip(tickers, {[a.strip() for a in asset_class_input.split(",") if a.strip()]}))
-
-        start_date = '{start_date}'
-        end_date = '{end_date}'
-
-        risk_free_rate = {risk_free_rate}
-        initial_investment = {initial_investment}
-        monthly_investment = {monthly_investment}
-        custom_annualized_return = {custom_annualized_return}
-        safe_withdrawal_rate = {safe_withdrawal_rate}
-        """
-        with open("my_portfolio.py", "w") as f:
-            f.write(content)
-        st.success("Tallennettu! Käynnistä Streamlit uudelleen ladataksesi uudet oletusarvot.")
+    if st.button("Save settings", use_container_width=True):
+        _save_config({
+            "tickers_input":           tickers_input,
+            "weights_input":           weights_input,
+            "asset_class_input":       asset_class_input,
+            "start_date":              start_date,
+            "risk_free_rate":          risk_free_rate,
+            "benchmark_ticker":        benchmark_ticker,
+            "initial_investment":      initial_investment,
+            "monthly_investment":      monthly_investment,
+            "custom_annualized_return":custom_annualized_return,
+            "safe_withdrawal_rate":    safe_withdrawal_rate,
+        })
+        st.success("Saved to portfolio_config.json")
+    if os.path.exists(_CONFIG_FILE):
+        if st.button("Reset to defaults", use_container_width=True):
+            os.remove(_CONFIG_FILE)
+            st.rerun()
 
 
 # ── Parse inputs ─────────────────────────────────────────────────────────────

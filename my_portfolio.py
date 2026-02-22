@@ -1,13 +1,13 @@
 from datetime import datetime, timedelta
 
 # Create a dictionary of tickers and weights
-tickers = ['FLX5.DE','FLXI.DE','MANTA.HE','EURUSD=X','XRP-EUR','XLM-EUR','ALGO-EUR','DOT-EUR']
-weights = [0.66043507817811,0.15992522093813733,0.11769204622705642,0.00773283480625425,0.046906866077498295,0.004843643779741672,0.0015295717199184228,0.0009347382732834807]
+tickers = ['SPY','QQQ']
+weights = [0.60,0.40]
 portfolio = dict(zip(tickers, weights))
 print('Portfolio:', portfolio)
 
 # Remember to change asset classes accoring to your portfolio
-asset_classes = dict(zip(tickers, ['USA Stocks','India Stocks','Stock','Cash','Crypto','Crypto','Crypto','Crypto']))
+asset_classes = dict(zip(tickers, ['USA Stocks','USA Stocks']))
 
 # Define the start date and end date
 start_date = '2000-01-01'

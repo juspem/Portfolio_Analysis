@@ -3,3 +3,4 @@ tools/.ipynb_checkpoints
 __pycache__
 portfolio_report.html
 .venv
+portfolio_config.json
