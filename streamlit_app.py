@@ -764,35 +764,45 @@ with tab_alloc:
                     new_h, new_s, new_v = h, s, v
                 else:
                     # Spread hue up to ±25° and vary brightness significantly
-                    hue_spread = 0.07  # ~25 degrees in 0-1 scale
+                    hue_spread = 0.10  # ~25 degrees in 0-1 scale
                     new_h = (h + (idx - (n-1)/2) * hue_spread / max(n-1, 1)) % 1.0
-                    new_s = min(1.0, max(0.4, s - idx * 0.12))
-                    new_v = min(1.0, max(0.5, v + (idx * 0.18) - ((n-1) * 0.09)))
+                    new_s = min(1.0, max(0.4, s - idx * 0.10))
+                    new_v = min(1.0, max(0.5, v + (idx * 0.20) - ((n-1) * 0.09)))
                 nr, ng, nb = colorsys.hsv_to_rgb(new_h, new_s, new_v)
                 ticker_color_map[t] = '#{:02x}{:02x}{:02x}'.format(
                     int(nr * 255), int(ng * 255), int(nb * 255))
         return [ticker_color_map[t] for t in ticker_list]
 
-    with col1:
-        # Ticker pie — same color family as asset class, each ticker a distinct shade
-        fig, ax = plt.subplots(figsize=(5, 5))
-        ticker_colors = get_ticker_colors(tickers, asset_classes)
-        wedges, texts, autotexts = ax.pie(
-            weights_raw, labels=tickers, autopct='%1.1f%%',
-            colors=ticker_colors,
-            pctdistance=0.78, startangle=140,
-            wedgeprops=dict(linewidth=2, edgecolor='#0f0f0f')
+    def draw_pie(ax, sizes, labels, colors, title):
+        """Draw a pie chart with labels+percentages in a legend, no overlapping text."""
+        wedges, _ = ax.pie(
+            sizes,
+            colors=colors,
+            startangle=140,
+            wedgeprops=dict(linewidth=2, edgecolor='#0f0f0f'),
         )
-        for t in texts:
-            t.set_color(PLOT_FG)
-            t.set_fontsize(10)
-        for at in autotexts:
-            at.set_color('#0f0f0f')
-            at.set_fontsize(9)
-            at.set_fontweight('bold')
+        # Build legend labels: "TICKER  12.3%"
+        legend_labels = [f"{lbl}  {sz:.1%}" for lbl, sz in zip(labels, sizes)]
+        ax.legend(
+            wedges, legend_labels,
+            loc='center left',
+            bbox_to_anchor=(-0.45, 0.5),
+            fontsize=9,
+            frameon=True,
+            facecolor='#1a1a1a',
+            edgecolor='#2a2a2a',
+            labelcolor=PLOT_FG,
+        )
+        ax.set_title(title, color=PLOT_FG, pad=12)
         ax.set_facecolor(PLOT_BG)
+
+    with col1:
+        # Ticker pie
+        ticker_colors = get_ticker_colors(tickers, asset_classes)
+        fig, ax = plt.subplots(figsize=(6, 5))
         fig.patch.set_facecolor(PLOT_BG)
-        ax.set_title("By Ticker", color=PLOT_FG)
+        draw_pie(ax, weights_raw, tickers, ticker_colors, "By Ticker")
+        fig.subplots_adjust(left=0.35)
         st.pyplot(fig)
         plt.close()
 
@@ -804,26 +814,13 @@ with tab_alloc:
                 class_weights[asset_classes[ticker]] += weight
 
         if class_weights:
-            fig, ax = plt.subplots(figsize=(5, 5))
             labels_ac = list(class_weights.keys())
             sizes_ac  = list(class_weights.values())
             ac_colors = [get_group_color(l) for l in labels_ac]
-            wedges, texts, autotexts = ax.pie(
-                sizes_ac, labels=labels_ac, autopct='%1.1f%%',
-                colors=ac_colors,
-                pctdistance=0.78, startangle=140,
-                wedgeprops=dict(linewidth=2, edgecolor='#0f0f0f')
-            )
-            for t in texts:
-                t.set_color(PLOT_FG)
-                t.set_fontsize(10)
-            for at in autotexts:
-                at.set_color('#0f0f0f')
-                at.set_fontsize(9)
-                at.set_fontweight('bold')
-            ax.set_facecolor(PLOT_BG)
+            fig, ax = plt.subplots(figsize=(6, 5))
             fig.patch.set_facecolor(PLOT_BG)
-            ax.set_title("By Asset Class", color=PLOT_FG)
+            draw_pie(ax, sizes_ac, labels_ac, ac_colors, "By Asset Class")
+            fig.subplots_adjust(left=0.35)
             st.pyplot(fig)
             plt.close()
 
