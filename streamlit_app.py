@@ -775,11 +775,13 @@ with tab_alloc:
 
     def draw_pie(ax, sizes, labels, colors, title):
         """Draw a pie chart with labels+percentages in a legend, no overlapping text."""
+        explode = [0.00] * len(sizes)
         wedges, _ = ax.pie(
             sizes,
             colors=colors,
             startangle=140,
-            wedgeprops=dict(linewidth=2, edgecolor='#0f0f0f'),
+            wedgeprops=dict(linewidth=0.5, edgecolor="#000000"),
+            explode=explode,
         )
         # Build legend labels: "TICKER  12.3%"
         legend_labels = [f"{lbl}  {sz:.1%}" for lbl, sz in zip(labels, sizes)]
