@@ -660,36 +660,123 @@ with tab_alloc:
 
     col1, col2 = st.columns(2)
 
-    # Color palette: distinct, readable on dark background
-    ASSET_CLASS_COLORS = {
-        'cash':              '#2ecc71',
-        'stock':             '#e74c3c',
-        'equity':            '#e74c3c',
-        'international etf': '#3498db',
-        'domestic etf':      '#9b59b6',
-        'bond':              '#f39c12',
-        'bonds':             '#f39c12',
-        'etf':               '#1abc9c',
-        'reit':              '#e67e22',
-        'commodity':         '#95a5a6',
-        'forex':             '#f1c40f',
-        'crypto':            '#fd79a8',
-    }
-    TICKER_PALETTE = ['#3498db','#e74c3c','#2ecc71','#f39c12','#9b59b6','#1abc9c','#e67e22','#fd79a8']
+    # Keyword-based group colors — anything matching a keyword gets this base color
+    ASSET_GROUP_COLORS = [
+        (['etf', 'stocks', 'fund', 'index', 'tracker', 'ishares', 'vanguard',
+          'msci', 'sp500', 's&p', 'nasdaq', 'dow', 'russell', 'country etf',
+          'sector etf', 'bond etf', 'equity etf', 'eft'],       '#3498db'),  # blue
+        (['stock', 'equity', 'share', 'growth', 'value', 'small cap',
+          'mid cap', 'large cap', 'dividend'],                    '#e74c3c'),  # red
+        (['cash', 'money market', 'savings', 'deposit', 'liquidity',
+          # Fiat spot pairs (Yahoo Finance format)
+          'eurusd=x', 'usdeur=x', 'gbpusd=x', 'usdgbp=x', 'usdjpy=x',
+          'jpyusd=x', 'usdchf=x', 'chfusd=x', 'usdcad=x', 'cadusd=x',
+          'audusd=x', 'usdaud=x', 'nzdusd=x', 'usdnzd=x', 'usdsek=x',
+          'usdnok=x', 'usddkk=x', 'usdpln=x', 'usdhuf=x', 'usdczk=x',
+          'usdsgd=x', 'usdhkd=x', 'usdcny=x', 'usdtry=x', 'usdinr=x',
+          'usdbrl=x', 'usdmxn=x', 'usdzar=x', 'usdkrw=x',
+          # Generic currency keywords
+          'eurusd', 'gbpusd', 'usdjpy', 'usdchf', 'usdcad', 'audusd',
+          'nzdusd', 'usd', 'eur', 'gbp', 'jpy', 'chf'],          '#2ecc71'),  # green
+        (['bond', 'fixed income', 'treasury', 'gilt', 'note',
+          'corporate bond', 'municipal', 'high yield', 'duration'],  '#f39c12'),  # orange
+        (['reit', 'real estate', 'property', 'infrastructure'],  '#e67e22'),  # dark orange
+        (['commodity', 'gold', 'silver', 'oil', 'gas', 'copper',
+          'wheat', 'corn', 'platinum', 'natural resource'],       '#95a5a6'),  # gray
+        (['crypto', 'bitcoin', 'ethereum', 'altcoin', 'defi', 'web3',
+          # Base names
+          'btc', 'eth', 'xrp', 'sol', 'bnb', 'doge', 'ada', 'avax',
+          'dot', 'matic', 'ltc', 'link', 'uni', 'atom', 'xlm', 'algo',
+          'icp', 'fil', 'hbar', 'near', 'apt', 'arb', 'op', 'sui',
+          'trx', 'shib', 'pepe', 'floki', 'inj', 'sei', 'ton', 'kas',
+          # USD pairs
+          'btcusd', 'ethusd', 'xrpusd', 'solusd', 'bnbusd', 'dogeusd',
+          'adausd', 'avaxusd', 'dotusd', 'maticusd', 'ltcusd', 'linkusd',
+          'uniusd', 'atomusd', 'xlmusd', 'algousd', 'icpusd', 'filusd',
+          'hbarusd', 'nearusd', 'aptusd', 'arbusd', 'opusd', 'suiusd',
+          'trxusd', 'shibusd', 'pepeusd', 'injusd', 'seiusd', 'tonusd',
+          # EUR pairs
+          'btceur', 'etheur', 'xrpeur', 'soleur', 'bnbeur', 'dogeeur',
+          'adaeur', 'avaxeur', 'doteur', 'maticeur', 'ltceur', 'linkeur',
+          'unieur', 'atomeur', 'xlmeur', 'algoeur', 'icpeur', 'fileur',
+          'hbareur', 'neareur', 'apteur', 'arbeur', 'opeur', 'suieur',
+          'trxeur', 'shibeur', 'pepeeur', 'injeur', 'seieur', 'toneur',
+          # Yahoo Finance format (COIN-USD / COIN-EUR)
+          'btc-usd', 'eth-usd', 'xrp-usd', 'sol-usd', 'bnb-usd',
+          'doge-usd', 'ada-usd', 'avax-usd', 'dot-usd', 'matic-usd',
+          'ltc-usd', 'link-usd', 'uni-usd', 'atom-usd', 'xlm-usd',
+          'algo-usd', 'icp-usd', 'fil-usd', 'hbar-usd', 'near-usd',
+          'apt-usd', 'arb-usd', 'op-usd', 'sui-usd', 'trx-usd',
+          'shib-usd', 'pepe-usd', 'inj-usd', 'sei-usd', 'ton-usd',
+          'kas-usd', 'fet-usd', 'render-usd', 'grt-usd', 'sand-usd',
+          'mana-usd', 'axs-usd', 'flow-usd', 'egld-usd', 'theta-usd',
+          'btc-eur', 'eth-eur', 'xrp-eur', 'sol-eur', 'bnb-eur',
+          'doge-eur', 'ada-eur', 'avax-eur', 'dot-eur', 'matic-eur',
+          'ltc-eur', 'link-eur', 'uni-eur', 'atom-eur', 'xlm-eur',
+          'algo-eur', 'icp-eur', 'fil-eur', 'hbar-eur', 'near-eur',
+          'apt-eur', 'arb-eur', 'op-eur', 'sui-eur', 'trx-eur',
+          'shib-eur', 'pepe-eur', 'inj-eur', 'sei-eur', 'ton-eur',
+          # Stablecoins
+          'usdt', 'usdc', 'dai', 'busd', 'tusd', 'frax'],        '#fd79a8'),  # pink
+        (['forex', 'currency', 'fx',
+          # Yahoo Finance forex format (XXXYYY=X)
+          'eurusd=x', 'gbpusd=x', 'usdjpy=x', 'usdchf=x', 'usdcad=x',
+          'audusd=x', 'nzdusd=x', 'usdsek=x', 'usdnok=x', 'usddkk=x',
+          'usdpln=x', 'usdhuf=x', 'usdczk=x', 'usdsgd=x', 'usdhkd=x',
+          'usdcny=x', 'usdtry=x', 'usdinr=x', 'usdbrl=x', 'usdmxn=x',
+          'usdzar=x', 'usdkrw=x', 'usdphp=x', 'usdthb=x', 'usdidr=x',
+          'eurgbp=x', 'eurjpy=x', 'eurchf=x', 'eurcad=x', 'euraud=x',
+          'eurnzd=x', 'eursek=x', 'eurnok=x', 'gbpjpy=x', 'gbpchf=x',
+          'gbpcad=x', 'gbpaud=x', 'gbpnzp=x', 'chfjpy=x', 'cadjpy=x',
+          'audjpy=x', 'nzdjpy=x', 'audcad=x', 'audchf=x', 'audnzd=x',
+          '=x'],                                                  '#f1c40f'),  # yellow
+    ]
 
-    def get_asset_color(label):
-        return ASSET_CLASS_COLORS.get(label.lower(), '#7f8c8d')
+    def get_group_color(label):
+        """Return base group color by matching keywords in label or ticker symbol."""
+        l = label.lower()
+        for keywords, color in ASSET_GROUP_COLORS:
+            if any(kw in l for kw in keywords):
+                return color
+        return '#7f8c8d'  # fallback gray
+
+    def get_ticker_colors(ticker_list, asset_classes_dict):
+        """Each ticker gets its own shade derived from its asset group color.
+        Falls back to matching the ticker symbol itself when asset class gives no match."""
+        import colorsys
+        groups = defaultdict(list)
+        for t in ticker_list:
+            ac_label = asset_classes_dict.get(t, '')
+            color = get_group_color(ac_label)
+            # If asset class didn't match, try the ticker symbol itself
+            if color == '#7f8c8d':
+                color = get_group_color(t)
+            groups[color].append(t)
+        ticker_color_map = {}
+        for base_hex, group_tickers in groups.items():
+            r = int(base_hex[1:3], 16) / 255
+            g = int(base_hex[3:5], 16) / 255
+            b = int(base_hex[5:7], 16) / 255
+            h, s, v = colorsys.rgb_to_hsv(r, g, b)
+            n = len(group_tickers)
+            for idx, t in enumerate(group_tickers):
+                if n == 1:
+                    new_h, new_s, new_v = h, s, v
+                else:
+                    # Spread hue up to ±25° and vary brightness significantly
+                    hue_spread = 0.07  # ~25 degrees in 0-1 scale
+                    new_h = (h + (idx - (n-1)/2) * hue_spread / max(n-1, 1)) % 1.0
+                    new_s = min(1.0, max(0.4, s - idx * 0.12))
+                    new_v = min(1.0, max(0.5, v + (idx * 0.18) - ((n-1) * 0.09)))
+                nr, ng, nb = colorsys.hsv_to_rgb(new_h, new_s, new_v)
+                ticker_color_map[t] = '#{:02x}{:02x}{:02x}'.format(
+                    int(nr * 255), int(ng * 255), int(nb * 255))
+        return [ticker_color_map[t] for t in ticker_list]
 
     with col1:
-        # Ticker pie
+        # Ticker pie — same color family as asset class, each ticker a distinct shade
         fig, ax = plt.subplots(figsize=(5, 5))
-        ticker_colors = []
-        for i, t in enumerate(tickers):
-            ac = asset_classes.get(t, '').lower()
-            if ac in ASSET_CLASS_COLORS:
-                ticker_colors.append(ASSET_CLASS_COLORS[ac])
-            else:
-                ticker_colors.append(TICKER_PALETTE[i % len(TICKER_PALETTE)])
+        ticker_colors = get_ticker_colors(tickers, asset_classes)
         wedges, texts, autotexts = ax.pie(
             weights_raw, labels=tickers, autopct='%1.1f%%',
             colors=ticker_colors,
@@ -720,7 +807,7 @@ with tab_alloc:
             fig, ax = plt.subplots(figsize=(5, 5))
             labels_ac = list(class_weights.keys())
             sizes_ac  = list(class_weights.values())
-            ac_colors = [get_asset_color(l) for l in labels_ac]
+            ac_colors = [get_group_color(l) for l in labels_ac]
             wedges, texts, autotexts = ax.pie(
                 sizes_ac, labels=labels_ac, autopct='%1.1f%%',
                 colors=ac_colors,
@@ -827,7 +914,7 @@ with tab_fi:
     # Project 40 years
     months      = 40 * 12
     values      = [initial_investment / 1000]
-    monthly_ret = (1 + returns).resample('ME').prod() - 1
+    monthly_ret = (1 + use_return) ** (1/12) - 1
     for _ in range(months):
         values.append(values[-1] * (1 + monthly_ret) + monthly_investment / 1000)
 
