@@ -174,20 +174,37 @@ with st.sidebar:
     benchmark_ticker         = st.text_input("Benchmark ticker", _cv("benchmark_ticker", "SPY"))
     initial_investment       = st.number_input("Initial investment ($)", 1000, 10_000_000, _cv("initial_investment", _p.initial_investment), step=500)
     monthly_investment       = st.number_input("Monthly contribution ($)", 0, 50_000, _cv("monthly_investment", _p.monthly_investment), step=100)
-    custom_annualized_return = st.slider("Custom annual return (forecast)", 0.0, 30.0, float(_cv("custom_annualized_return", _p.custom_annualized_return or 0) * 100), 0.5, format="%.1f%%") / 100
+    _car_options = ["Historical"] + [f"{v/10:.1f}%" for v in range(0, 301)]  # 0.0%..30.0%
+    _car_saved = _cv("custom_annualized_return", _p.custom_annualized_return or 0)
+    _car_default = "Historical" if _car_saved == 0 else f"{_car_saved*100:.1f}%"
+    if _car_default not in _car_options:
+        _car_default = "Historical"
+    _car_sel = st.select_slider(
+        "Custom annual return (forecast)",
+        options=_car_options,
+        value=_car_default,
+        help="Select 'Historical' to use the portfolio's own annualised return from the data. Otherwise pick a fixed forecast rate."
+    )
+    custom_annualized_return = 0.0 if _car_sel == "Historical" else float(_car_sel.replace("%", "")) / 100
     safe_withdrawal_rate     = st.slider("Safe withdrawal rate (SWR)", 0.0, 10.0, float(_cv("safe_withdrawal_rate", _p.safe_withdrawal_rate) * 100), 0.1, format="%.1f%%") / 100
 
-    # Tarkista avainmuutos ENNEN nappia
+    # Track whether analysis has ever been run (persists for the session)
+    if "has_run_once" not in st.session_state:
+        st.session_state["has_run_once"] = False
+
+    # Detect if data-relevant params changed -> need fresh fetch
     _key = (tickers_input, weights_input, start_date, end_date, benchmark_ticker)
     if st.session_state.get("_last_key") != _key:
         st.session_state["_last_key"] = _key
         st.session_state["analysis_run"] = False
 
-    # Nappi päivittää tilan
-    if st.button("Run Analysis", type="primary", use_container_width=True):
+    _btn_label = "Re-run Analysis" if st.session_state.get("has_run_once") else "Run Analysis"
+    if st.button(_btn_label, type="primary", use_container_width=True):
         st.session_state["analysis_run"] = True
+        st.session_state["has_run_once"] = True
 
-    run = st.session_state.get("analysis_run", False)
+    # After first run: never block the UI again even if params change
+    run = st.session_state.get("analysis_run", False) or st.session_state.get("has_run_once", False)
 
     st.markdown('<div class="section-header">Save Configuration</div>', unsafe_allow_html=True)
     if st.button("Save settings", use_container_width=True):
@@ -228,7 +245,8 @@ st.markdown("# Portfolio Analysis")
 st.caption(f"Period: {start_date} to {end_date}  |  Benchmark: {benchmark_ticker}  |  Risk-free rate: {risk_free_rate:.2%}")
 
 if not run:
-    st.info("Configure your portfolio in the sidebar and click Run Analysis.")
+    # Only shown on very first visit before any analysis has been run
+    st.info("Configure your portfolio in the sidebar and click **Run Analysis**.")
     st.stop()
 
 
@@ -365,24 +383,68 @@ m = {
 
 
 # ── Tabs ──────────────────────────────────────────────────────────────────────
-tabs = st.tabs([
-    "Overview",
-    "Performance",
-    "Risk",
-    "Benchmark",
-    "Allocation",
-    "Correlations",
-    "FI Forecast",
-    "Report",
-])
+# ── Custom tab navigation with session_state memory ──────────────────────────
+_TAB_NAMES = ["Overview", "Performance", "Risk", "Benchmark", "Allocation", "Correlations", "FI Forecast", "Report"]
+if "active_tab" not in st.session_state:
+    st.session_state["active_tab"] = 0
 
-tab_overview, tab_perf, tab_risk, tab_bench, tab_alloc, tab_corr, tab_fi, tab_report = tabs
+# Inject CSS to make tab buttons look like plain text links
+st.markdown("""
+<style>
+[data-testid="stHorizontalBlock"] > div [data-testid="stButton"] > button {
+    background: none !important;
+    border: none !important;
+    box-shadow: none !important;
+    color: #aaa !important;
+    font-size: 0.95rem !important;
+    font-weight: 400 !important;
+    padding: 0.25rem 0.5rem !important;
+    border-radius: 0 !important;
+    transition: color 0.15s;
+    width: 100%;
+}
+[data-testid="stHorizontalBlock"] > div [data-testid="stButton"] > button:hover {
+    color: #e53935 !important;
+    background: none !important;
+}
+[data-testid="stHorizontalBlock"] > div [data-testid="stButton"] > button.active-tab {
+    color: #fff !important;
+    font-weight: 600 !important;
+    border-bottom: 2px solid #fff !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
+_tcols = st.columns(len(_TAB_NAMES))
+for _i, (_tc, _tn) in enumerate(zip(_tcols, _TAB_NAMES)):
+    with _tc:
+        _is_active = st.session_state["active_tab"] == _i
+        _label = f"**{_tn}**" if _is_active else _tn
+        if st.button(
+            _label,
+            key=f"_tab_btn_{_i}",
+            use_container_width=True,
+        ):
+            st.session_state["active_tab"] = _i
+            st.rerun()
+
+st.markdown("<hr style='margin:0.3rem 0 1rem 0; border-color:#444'>", unsafe_allow_html=True)
+_active_tab = st.session_state["active_tab"]
+
+tab_overview = _active_tab == 0
+tab_perf     = _active_tab == 1
+tab_risk     = _active_tab == 2
+tab_bench    = _active_tab == 3
+tab_alloc    = _active_tab == 4
+tab_corr     = _active_tab == 5
+tab_fi       = _active_tab == 6
+tab_report   = _active_tab == 7
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 1 – OVERVIEW
 # ══════════════════════════════════════════════════════════════════════════════
-with tab_overview:
+if tab_overview:
     def metric_html(label, value, fmt=".2%", positive_good=True):
         if isinstance(value, float) and not np.isnan(value):
             if fmt == ".2f" or fmt == ".3f":
@@ -445,7 +507,7 @@ with tab_overview:
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 2 – PERFORMANCE
 # ══════════════════════════════════════════════════════════════════════════════
-with tab_perf:
+if tab_perf:
     st.markdown('<div class="section-header">Daily Returns</div>', unsafe_allow_html=True)
 
     fig, axes = plt.subplots(3, 1, figsize=(12, 9))
@@ -515,7 +577,7 @@ with tab_perf:
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 3 – RISK
 # ══════════════════════════════════════════════════════════════════════════════
-with tab_risk:
+if tab_risk:
     st.markdown('<div class="section-header">Risk Metrics</div>', unsafe_allow_html=True)
 
     risk_df = pd.DataFrame({
@@ -596,7 +658,7 @@ with tab_risk:
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 4 – BENCHMARK
 # ══════════════════════════════════════════════════════════════════════════════
-with tab_bench:
+if tab_bench:
     st.markdown('<div class="section-header">Benchmark Comparison</div>', unsafe_allow_html=True)
 
     col1, col2 = st.columns(2)
@@ -690,7 +752,7 @@ with tab_bench:
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 5 – ALLOCATION
 # ══════════════════════════════════════════════════════════════════════════════
-with tab_alloc:
+if tab_alloc:
     st.markdown('<div class="section-header">Portfolio Weights</div>', unsafe_allow_html=True)
 
     col1, col2 = st.columns(2)
@@ -899,7 +961,7 @@ with tab_alloc:
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 6 – CORRELATIONS
 # ══════════════════════════════════════════════════════════════════════════════
-with tab_corr:
+if tab_corr:
     @st.fragment
     def render_correlations():
         st.markdown('<div class="section-header">Correlation Matrix</div>', unsafe_allow_html=True)
@@ -942,7 +1004,7 @@ with tab_corr:
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 7 – FI FORECAST
 # ══════════════════════════════════════════════════════════════════════════════
-with tab_fi:
+if tab_fi:
     @st.fragment
     def render_fi():
         st.markdown('<div class="section-header">Financial Independence Forecast</div>', unsafe_allow_html=True)
@@ -972,37 +1034,42 @@ with tab_fi:
             )
 
         no_withdrawals = withdrawal_start_year == 0
+
+        hist_return  = ann_return(p_ret)
+        use_return   = custom_annualized_return if custom_annualized_return > 0 else hist_return
+        return_label = f"{use_return:.1%} (historical)" if custom_annualized_return == 0 else f"{use_return:.1%} (custom)"
+        monthly_ret  = (1 + use_return) ** (1/12) - 1
+
         if no_withdrawals:
             st.caption(
                 f"**Accumulation only** — contributing ${monthly_investment}/month for {total_horizon_years} years, "
-                f"growing at {(custom_annualized_return if custom_annualized_return > 0 else ann_return(p_ret)):.1%}/yr. No withdrawals."
+                f"growing at {return_label}/yr. No withdrawals."
             )
         else:
             st.caption(
                 f"**Accumulation:** years 0–{withdrawal_start_year} — contributing ${monthly_investment}/month, "
-                f"growing at {(custom_annualized_return if custom_annualized_return > 0 else ann_return(p_ret)):.1%}/yr   |   "
+                f"growing at {return_label}/yr   |   "
                 f"**Withdrawal:** years {withdrawal_start_year}–{total_horizon_years} — contributions stop, spending begins"
             )
-
-        hist_return = ann_return(p_ret)
-        use_return  = custom_annualized_return if custom_annualized_return > 0 else hist_return
-        monthly_ret = (1 + use_return) ** (1/12) - 1
 
         total_months         = total_horizon_years * 12
         # If withdrawal_start_year == 0, set start beyond total so withdrawal phase never triggers
         withdrawal_start_mo  = total_months if no_withdrawals else withdrawal_start_year * 12
         proj_dates           = pd.date_range(datetime.today(), periods=total_months + 1, freq='MS')
 
+        # ── Current portfolio value: initial_investment grown through history ──
+        current_portfolio_value = (1 + p_ret).cumprod().iloc[-1] * initial_investment
+
         # ── Helper: simulate one full path with two phases ──────────────────
         def simulate(annual_spend_k, deterministic=True, sig_m=0.0):
             """
             Phase 1 (accumulation):  value grows + monthly_investment added each month.
             Phase 2 (withdrawal):    value grows - monthly_withdrawal deducted, no contributions.
-            monthly_withdrawal is fixed in nominal terms = annual_spend_k / 12 (already in $k).
+            Starts from current_portfolio_value (initial_investment grown through the historical period).
             Returns list of length total_months+1.
             """
             monthly_withdrawal = annual_spend_k / 12  # $k per month
-            values = [initial_investment / 1000]
+            values = [current_portfolio_value / 1000]
             for mo in range(total_months):
                 prev = values[-1]
                 r = monthly_ret if deterministic else np.random.normal(monthly_ret, sig_m)
@@ -1083,10 +1150,10 @@ with tab_fi:
         ax.axhline(0, color='white', linewidth=0.6, alpha=0.3)
         ax.set_ylabel("Net Worth ($k)")
         ax.set_title(
-            f"FI Forecast — {use_return:.1%}/yr return  |  "
+            f"FI Forecast — {return_label} return  |  "
             f"${monthly_investment}/mo contribution until yr {withdrawal_start_year}  |  "
             f"SWR {safe_withdrawal_rate:.1%}" if has_swr else
-            f"FI Forecast — {use_return:.1%}/yr return  |  "
+            f"FI Forecast — {return_label} return  |  "
             f"${monthly_investment}/mo contribution until yr {withdrawal_start_year}"
         )
         ax.legend(fontsize=9, loc='upper left')
@@ -1106,6 +1173,7 @@ with tab_fi:
 
         # ── FI Summary table ────────────────────────────────────────────────
         st.markdown('<div class="section-header">FI Goals Summary</div>', unsafe_allow_html=True)
+        st.caption(f"Forecast starts from current portfolio value: ${current_portfolio_value:,.0f} (${initial_investment:,.0f} invested from {start_date}, grown at historical returns)")
 
         fi_rows = []
         for spend_k, label, _ in scenarios:
@@ -1133,7 +1201,7 @@ with tab_fi:
             if exhausted:
                 longevity = f"{exhausted[0] / 12:.0f} yrs (exhausted)"
             else:
-                longevity = f"{(total_horizon_years - withdrawal_start_year)}+ yrs ✓  (${vals[-1]:.0f}k left)"
+                longevity = f"{(total_horizon_years - withdrawal_start_year)}+ yrs (${vals[-1]:.0f}k left)"
 
             monthly_w = spend_k / 12
             fi_rows.append({
@@ -1148,7 +1216,7 @@ with tab_fi:
         st.dataframe(pd.DataFrame(fi_rows), use_container_width=True, hide_index=True)
 
         if not has_swr:
-            st.info("💡 Set Safe Withdrawal Rate > 0 in the sidebar to see FI target NW calculations and years-to-FI.")
+            st.info("Set Safe Withdrawal Rate > 0 in the sidebar to see FI target NW calculations and years-to-FI.")
 
         # ── Monte Carlo ──────────────────────────────────────────────────────
         st.markdown('<div class="section-header">Monte Carlo Simulation</div>', unsafe_allow_html=True)
@@ -1214,7 +1282,7 @@ with tab_fi:
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 8 – REPORT
 # ══════════════════════════════════════════════════════════════════════════════
-with tab_report:
+if tab_report:
     st.markdown('<div class="section-header">Full Metrics Report</div>', unsafe_allow_html=True)
 
     all_metrics = {
@@ -1257,10 +1325,12 @@ with tab_report:
         with st.spinner("Generating report..."):
             try:
                 tmp = tempfile.NamedTemporaryFile(suffix=".html", delete=False)
-                qs.reports.html(p_ret, benchmark=b_ret, output=tmp.name, title="Portfolio Report")
-                with open(tmp.name, "r", encoding="utf-8") as f:
+                tmp_path = tmp.name
+                tmp.close()  # Close before QuantStats writes (required on Windows)
+                qs.reports.html(p_ret, benchmark=b_ret, output=tmp_path, title="Portfolio Report")
+                with open(tmp_path, "r", encoding="utf-8") as f:
                     html_content = f.read()
-                os.unlink(tmp.name)
+                os.unlink(tmp_path)
                 st.download_button(
                     "Download QuantStats HTML Report",
                     html_content.encode(),
