@@ -947,114 +947,266 @@ with tab_fi:
     def render_fi():
         st.markdown('<div class="section-header">Financial Independence Forecast</div>', unsafe_allow_html=True)
 
+        # ── Spend targets ───────────────────────────────────────────────────
         col1, col2, col3 = st.columns(3)
         with col1:
-            lean_fi  = st.number_input("Lean FI annual spend ($k)",  10, 500, 50)
+            lean_fi = st.number_input("Lean FI annual spend ($k)",  10, 500, 50)
         with col2:
-            safe_fi  = st.number_input("Safe FI annual spend ($k)",  10, 500, 100)
+            safe_fi = st.number_input("Safe FI annual spend ($k)",  10, 500, 100)
         with col3:
-            cozy_fi  = st.number_input("Cozy FI annual spend ($k)",  10, 500, 175)
+            cozy_fi = st.number_input("Cozy FI annual spend ($k)",  10, 500, 175)
+
+        # ── Withdrawal start slider ─────────────────────────────────────────
+        st.markdown('<div class="section-header">Withdrawal Phase Settings</div>', unsafe_allow_html=True)
+        w_col1, w_col2 = st.columns([2, 1])
+        with w_col1:
+            withdrawal_start_year = st.slider(
+                "Start withdrawals after (years from today)",
+                min_value=0, max_value=50, value=20, step=1,
+                help="Set to 0 to disable withdrawals entirely (pure accumulation). Otherwise, contributions stop and spending begins from this year onward."
+            )
+        with w_col2:
+            total_horizon_years = st.slider(
+                "Total forecast horizon (years)",
+                min_value=max(withdrawal_start_year + 1, 1), max_value=80, value=max(40, withdrawal_start_year + 20), step=1
+            )
+
+        no_withdrawals = withdrawal_start_year == 0
+        if no_withdrawals:
+            st.caption(
+                f"**Accumulation only** — contributing ${monthly_investment}/month for {total_horizon_years} years, "
+                f"growing at {(custom_annualized_return if custom_annualized_return > 0 else ann_return(p_ret)):.1%}/yr. No withdrawals."
+            )
+        else:
+            st.caption(
+                f"**Accumulation:** years 0–{withdrawal_start_year} — contributing ${monthly_investment}/month, "
+                f"growing at {(custom_annualized_return if custom_annualized_return > 0 else ann_return(p_ret)):.1%}/yr   |   "
+                f"**Withdrawal:** years {withdrawal_start_year}–{total_horizon_years} — contributions stop, spending begins"
+            )
 
         hist_return = ann_return(p_ret)
         use_return  = custom_annualized_return if custom_annualized_return > 0 else hist_return
-
-        # Project 40 years
-        months      = 40 * 12
-        values      = [initial_investment / 1000]
         monthly_ret = (1 + use_return) ** (1/12) - 1
-        for _ in range(months):
-            values.append(values[-1] * (1 + monthly_ret) + monthly_investment / 1000)
 
-        from datetime import date
-        proj_dates = pd.date_range(datetime.today(), periods=months + 1, freq='MS')
-        proj_series = pd.Series(values, index=proj_dates)
+        total_months         = total_horizon_years * 12
+        # If withdrawal_start_year == 0, set start beyond total so withdrawal phase never triggers
+        withdrawal_start_mo  = total_months if no_withdrawals else withdrawal_start_year * 12
+        proj_dates           = pd.date_range(datetime.today(), periods=total_months + 1, freq='MS')
 
+        # ── Helper: simulate one full path with two phases ──────────────────
+        def simulate(annual_spend_k, deterministic=True, sig_m=0.0):
+            """
+            Phase 1 (accumulation):  value grows + monthly_investment added each month.
+            Phase 2 (withdrawal):    value grows - monthly_withdrawal deducted, no contributions.
+            monthly_withdrawal is fixed in nominal terms = annual_spend_k / 12 (already in $k).
+            Returns list of length total_months+1.
+            """
+            monthly_withdrawal = annual_spend_k / 12  # $k per month
+            values = [initial_investment / 1000]
+            for mo in range(total_months):
+                prev = values[-1]
+                r = monthly_ret if deterministic else np.random.normal(monthly_ret, sig_m)
+                grown = max(prev, 0) * (1 + r)   # can't grow negative principal
+                if mo < withdrawal_start_mo:
+                    # Accumulation phase: add contribution
+                    next_val = grown + monthly_investment / 1000
+                else:
+                    # Withdrawal phase: deduct spending
+                    next_val = grown - monthly_withdrawal
+                values.append(next_val)
+            return values
+
+        # ── FI target NW for each spend level ──────────────────────────────
+        # Target = annual_spend / SWR  (only meaningful when SWR > 0)
+        has_swr = safe_withdrawal_rate > 0
+
+        scenarios = [
+            (lean_fi, "Lean FI",  ACCENT3),
+            (safe_fi, "Safe FI",  ACCENT),
+            (cozy_fi, "Cozy FI",  ACCENT4),
+        ]
+
+        # ── Main chart ──────────────────────────────────────────────────────
         fig, ax = plt.subplots(figsize=(12, 5))
-        ax.plot(proj_series.index, proj_series.values,
-                color=ACCENT, linewidth=2, label="Projected Net Worth")
-        ax.fill_between(proj_series.index, 0, proj_series.values, alpha=0.1, color=ACCENT)
 
-        if safe_withdrawal_rate > 0:
-            for target, label, color in [
-                (lean_fi / safe_withdrawal_rate, f"Lean FI (${lean_fi}k/yr)", ACCENT3),
-                (safe_fi / safe_withdrawal_rate, f"Safe FI (${safe_fi}k/yr)", ACCENT),
-                (cozy_fi / safe_withdrawal_rate, f"Cozy FI (${cozy_fi}k/yr)", ACCENT4),
-            ]:
-                ax.axhline(target, color=color, linewidth=1.5, linestyle='--', label=label)
-                # Mark crossing
-                cross = proj_series[proj_series >= target]
+        # Shade accumulation vs withdrawal regions
+        acc_end_date = proj_dates[withdrawal_start_mo] if not no_withdrawals else proj_dates[-1]
+        ax.axvspan(proj_dates[0], acc_end_date, alpha=0.04, color=ACCENT, zorder=0)
+        if not no_withdrawals:
+            ax.axvspan(acc_end_date, proj_dates[-1], alpha=0.04, color=ACCENT2, zorder=0)
+            ax.axvline(acc_end_date, color="white", linewidth=1.2, linestyle=':', alpha=0.6)
+
+        for spend_k, label, color in scenarios:
+            vals = simulate(spend_k)
+            series = pd.Series(vals, index=proj_dates)
+
+            # Accumulation portion (solid)
+            ax.plot(proj_dates[:withdrawal_start_mo + 1],
+                    [v for v in vals[:withdrawal_start_mo + 1]],
+                    color=color, linewidth=2)
+
+            # Withdrawal portion (dashed)
+            ax.plot(proj_dates[withdrawal_start_mo:],
+                    [v for v in vals[withdrawal_start_mo:]],
+                    color=color, linewidth=2, linestyle='--',
+                    label=f"{label} (${spend_k}k/yr spend)")
+
+            # Mark if/when portfolio is exhausted
+            withdrawal_vals = vals[withdrawal_start_mo:]
+            exhausted = [i for i, v in enumerate(withdrawal_vals) if v <= 0]
+            if exhausted:
+                ex_mo   = withdrawal_start_mo + exhausted[0]
+                ex_year = ex_mo / 12
+                ax.scatter([proj_dates[ex_mo]], [0],
+                           color=color, s=80, zorder=6, marker='X')
+                ax.annotate(f"Exhausted\nyr {ex_year:.0f}",
+                            xy=(proj_dates[ex_mo], 0),
+                            xytext=(0, 18), textcoords='offset points',
+                            fontsize=7, color=color, ha='center')
+            else:
+                final_val = vals[-1]
+                ax.scatter([proj_dates[-1]], [final_val],
+                           color=color, s=50, zorder=6)
+
+            # FI required NW target line (only if SWR set)
+            if has_swr:
+                target = spend_k / safe_withdrawal_rate
+                ax.axhline(target, color=color, linewidth=0.8, linestyle=':',
+                           alpha=0.5)
+                # Mark first crossing during accumulation
+                acc_series = series.iloc[:withdrawal_start_mo + 1]
+                cross = acc_series[acc_series >= target]
                 if not cross.empty:
                     ax.scatter([cross.index[0]], [cross.iloc[0]],
-                            color=color, s=60, zorder=5)
+                               color=color, s=60, zorder=5, marker='*', edgecolors='white', linewidth=0.5)
 
+        ax.axhline(0, color='white', linewidth=0.6, alpha=0.3)
         ax.set_ylabel("Net Worth ($k)")
-        ax.set_title(f"40-Year Forecast — {use_return:.1%} annual return, ${monthly_investment}/month contribution")
-        ax.legend(fontsize=9)
+        ax.set_title(
+            f"FI Forecast — {use_return:.1%}/yr return  |  "
+            f"${monthly_investment}/mo contribution until yr {withdrawal_start_year}  |  "
+            f"SWR {safe_withdrawal_rate:.1%}" if has_swr else
+            f"FI Forecast — {use_return:.1%}/yr return  |  "
+            f"${monthly_investment}/mo contribution until yr {withdrawal_start_year}"
+        )
+        ax.legend(fontsize=9, loc='upper left')
         apply_style(fig, [ax])
+
+        # Now annotate the withdrawal start line after axes are scaled
+        ylims = ax.get_ylim()
+        if not no_withdrawals:
+            ax.text(acc_end_date, ylims[1] * 0.97,
+                    "  accumulation →", fontsize=8, color="#4caf50",
+                    alpha=0.9, va='top', ha='right')
+            ax.text(acc_end_date, ylims[1] * 0.97,
+                    "← withdrawal  ", fontsize=8, color="#ef5350",
+                    alpha=0.9, va='top', ha='left')
         st.pyplot(fig)
         plt.close()
 
-        # FI table
-        if safe_withdrawal_rate > 0:
-            st.markdown('<div class="section-header">FI Goals</div>', unsafe_allow_html=True)
-            fi_rows = []
-            for label, spend in [("Lean", lean_fi), ("Safe", safe_fi), ("Cozy", cozy_fi)]:
-                target = spend / safe_withdrawal_rate
-                cross  = proj_series[proj_series >= target]
-                years  = (cross.index[0] - datetime.today()).days / 365 if not cross.empty else None
-                fi_rows.append({
-                    "Goal":              label,
-                    "Annual Spend ($k)": spend,
-                    "Required NW ($k)":  f"{target:.0f}",
-                    "Years to Goal":     f"{years:.1f}" if years else "40+ years",
-                })
-            st.dataframe(pd.DataFrame(fi_rows), use_container_width=True, hide_index=True)
-        else:
-            st.info("Set Safe Withdrawal Rate > 0 in the sidebar to see FI goals.")
+        # ── FI Summary table ────────────────────────────────────────────────
+        st.markdown('<div class="section-header">FI Goals Summary</div>', unsafe_allow_html=True)
 
-        # Monte Carlo
+        fi_rows = []
+        for spend_k, label, _ in scenarios:
+            vals    = simulate(spend_k)
+            series  = pd.Series(vals, index=proj_dates)
+
+            # NW at withdrawal start
+            nw_at_retirement = vals[withdrawal_start_mo]
+
+            # Required NW via SWR
+            if has_swr:
+                target      = spend_k / safe_withdrawal_rate
+                acc_series  = series.iloc[:withdrawal_start_mo + 1]
+                cross       = acc_series[acc_series >= target]
+                yrs_to_fi   = (cross.index[0] - datetime.today()).days / 365 if not cross.empty else None
+                fi_target   = f"${target:.0f}k"
+                yrs_str     = f"{yrs_to_fi:.1f}" if yrs_to_fi else f">{withdrawal_start_year}"
+            else:
+                fi_target = "—"
+                yrs_str   = "—"
+
+            # Portfolio longevity after withdrawal start
+            withdrawal_vals = vals[withdrawal_start_mo:]
+            exhausted = [i for i, v in enumerate(withdrawal_vals) if v <= 0]
+            if exhausted:
+                longevity = f"{exhausted[0] / 12:.0f} yrs (exhausted)"
+            else:
+                longevity = f"{(total_horizon_years - withdrawal_start_year)}+ yrs ✓  (${vals[-1]:.0f}k left)"
+
+            monthly_w = spend_k / 12
+            fi_rows.append({
+                "Scenario":              label,
+                "Annual Spend":          f"${spend_k}k  (${monthly_w:.1f}k/mo)",
+                "Required NW (SWR)":     fi_target,
+                "Years to FI target":    yrs_str,
+                "NW at retirement":      f"${nw_at_retirement:.0f}k",
+                "Portfolio lasts":       longevity,
+            })
+
+        st.dataframe(pd.DataFrame(fi_rows), use_container_width=True, hide_index=True)
+
+        if not has_swr:
+            st.info("💡 Set Safe Withdrawal Rate > 0 in the sidebar to see FI target NW calculations and years-to-FI.")
+
+        # ── Monte Carlo ──────────────────────────────────────────────────────
         st.markdown('<div class="section-header">Monte Carlo Simulation</div>', unsafe_allow_html=True)
 
         mc_col1, mc_col2, mc_col3 = st.columns(3)
         with mc_col1:
             n_sim        = st.number_input("Number of simulations", 100, 5000, 500, step=100)
         with mc_col2:
-            n_years      = st.number_input("Forecast horizon (years)", 5, 50, 20, step=5)
+            mc_spend     = st.selectbox("Spending scenario for MC", ["Lean FI", "Safe FI", "Cozy FI"], index=1)
         with mc_col3:
             n_paths_plot = st.number_input("Paths shown in chart", 10, 500, 100, step=10)
 
-        n_months = n_years * 12
-        mc_paths = []
-        mu_m     = (1 + use_return) ** (1/12) - 1
-        sig_m    = ann_vol(p_ret) / np.sqrt(12)
-        for _ in range(n_sim):
-            path = [initial_investment / 1000]
-            for _ in range(n_months):
-                r = np.random.normal(mu_m, sig_m)
-                path.append(path[-1] * (1 + r) + monthly_investment / 1000)
-            mc_paths.append(path)
-
-        mc_arr   = np.array(mc_paths)
-        mc_dates = pd.date_range(datetime.today(), periods=n_months + 1, freq='MS')
+        mc_spend_map  = {"Lean FI": lean_fi, "Safe FI": safe_fi, "Cozy FI": cozy_fi}
+        mc_spend_k    = mc_spend_map[mc_spend]
+        sig_m         = ann_vol(p_ret) / np.sqrt(12)
+        mc_paths      = [simulate(mc_spend_k, deterministic=False, sig_m=sig_m) for _ in range(int(n_sim))]
+        mc_arr        = np.array(mc_paths)
 
         fig, ax = plt.subplots(figsize=(12, 5))
-        for path in mc_paths[:n_paths_plot]:
-            ax.plot(mc_dates, path, alpha=0.05, color=ACCENT, linewidth=0.8)
-        p10  = np.percentile(mc_arr, 10,  axis=0)
-        p50  = np.percentile(mc_arr, 50,  axis=0)
-        p90  = np.percentile(mc_arr, 90,  axis=0)
-        ax.plot(mc_dates, p50, color=ACCENT,  linewidth=2, label="Median")
-        ax.plot(mc_dates, p10, color=ACCENT2, linewidth=1.5, linestyle='--', label="10th pct")
-        ax.plot(mc_dates, p90, color=ACCENT3, linewidth=1.5, linestyle='--', label="90th pct")
-        ax.fill_between(mc_dates, p10, p90, alpha=0.1, color=ACCENT)
+
+        ax.axvspan(proj_dates[0], acc_end_date, alpha=0.04, color=ACCENT, zorder=0)
+        ax.axvspan(acc_end_date, proj_dates[-1], alpha=0.04, color=ACCENT2, zorder=0)
+        ax.axvline(acc_end_date, color="white", linewidth=1.0, linestyle=':', alpha=0.5)
+
+        for path in mc_paths[:int(n_paths_plot)]:
+            ax.plot(proj_dates, path, alpha=0.04, color=ACCENT, linewidth=0.7)
+
+        p10 = np.percentile(mc_arr, 10,  axis=0)
+        p50 = np.percentile(mc_arr, 50,  axis=0)
+        p90 = np.percentile(mc_arr, 90,  axis=0)
+        ax.plot(proj_dates, p50, color=ACCENT,  linewidth=2,   label="Median (50th pct)")
+        ax.plot(proj_dates, p10, color=ACCENT2, linewidth=1.5, linestyle='--', label="Pessimistic (10th pct)")
+        ax.plot(proj_dates, p90, color=ACCENT3, linewidth=1.5, linestyle='--', label="Optimistic (90th pct)")
+        ax.fill_between(proj_dates, p10, p90, alpha=0.08, color=ACCENT)
+        ax.axhline(0, color='white', linewidth=0.6, alpha=0.3)
+
+        # % of paths that survive (stay > 0) through full horizon
+        surviving = np.sum(mc_arr[:, -1] > 0) / len(mc_paths) * 100
+        exhausted_paths = np.sum(mc_arr[:, -1] <= 0)
+
         ax.set_ylabel("Net Worth ($k)")
-        ax.set_title(f"{n_years}-Year Monte Carlo Simulation ({int(n_sim)} paths)")
+        ax.set_title(
+            f"{total_horizon_years}-yr Monte Carlo — {mc_spend} (${mc_spend_k}k/yr spend)  |  "
+            f"Withdrawals start yr {withdrawal_start_year}  |  "
+            f"Portfolio survives in {surviving:.0f}% of scenarios"
+        )
         ax.legend(fontsize=9)
         apply_style(fig, [ax])
         st.pyplot(fig)
         plt.close()
 
-        st.caption(f"Final value at {n_years} years — Median: ${p50[-1]:.0f}k  |  10th pct: ${p10[-1]:.0f}k  |  90th pct: ${p90[-1]:.0f}k")
+        st.caption(
+            f"At year {total_horizon_years} — "
+            f"Median: ${p50[-1]:.0f}k  |  "
+            f"10th pct: ${p10[-1]:.0f}k  |  "
+            f"90th pct: ${p90[-1]:.0f}k  |  "
+            f"Portfolio exhausted in {exhausted_paths:.0f}/{int(n_sim)} scenarios ({100-surviving:.0f}%)"
+        )
 
     render_fi()
 
