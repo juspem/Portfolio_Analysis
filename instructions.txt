@@ -1,0 +1,21 @@
+You only need python installed
+
+Go to the folder portfolio_analysis: "cd .\portfolio_analysis"
+Create virtual environment: "py -m venv .venv"
+Enable: ".\.venv\Scripts\Activate.ps1"
+Download dependencies: "pip install -r requirements.txt"
+Run the program: "streamlit run streamlit_app.py"
+
+(You can also use the program "jupyter notebook" but the changes will not be saved to .json)
+
+------------------------------------------------------------------------------------
+
+Tarvitset vain pythonin asennettuna
+
+Mene kansioon portfolio_analysis: "cd .\portfolio_analysis"
+Luo virtual environment: "py -m venv .venv"
+Ota käyttöön: ".\.venv\Scripts\Activate.ps1"
+Lataa riippuvuudet: "pip install -r requirements.txt"
+Käynnistä ohjelma: "streamlit run streamlit_app.py"
+
+(Voit käyttää ohjelmaa myös "jupyter notebook" mutta muutokset eivät tallennu .json)
