@@ -1320,8 +1320,8 @@ if tab_report:
     st.download_button("Download Metrics CSV", csv, "portfolio_metrics.csv", "text/csv")
 
     # QuantStats HTML report
-    st.markdown('<div class="section-header">QuantStats HTML Report</div>', unsafe_allow_html=True)
-    if st.button("Generate QuantStats Report"):
+    st.markdown('<div class="section-header">Full Report</div>', unsafe_allow_html=True)
+    if st.button("Generate HTML Report"):
         with st.spinner("Generating report..."):
             try:
                 tmp = tempfile.NamedTemporaryFile(suffix=".html", delete=False)
@@ -1332,11 +1332,11 @@ if tab_report:
                     html_content = f.read()
                 os.unlink(tmp_path)
                 st.download_button(
-                    "Download QuantStats HTML Report",
+                    "Download HTML Report",
                     html_content.encode(),
                     "portfolio_report.html",
                     "text/html"
                 )
                 st.success("Report ready — click above to download.")
             except Exception as e:
-                st.error(f"QuantStats report failed: {e}")
+                st.error(f"Report failed: {e}")
