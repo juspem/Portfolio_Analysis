@@ -4,5 +4,6 @@ Mene kansioon portfolio_analysis: "cd .\portfolio_analysis"
 Luo virtual environment: "py -m venv .venv"
 Ota käyttöön: ".\.venv\Scripts\Activate.ps1"
 Lataa riippuvuudet: "pip install -r requirements.txt"
-Luo portfoliosi "my_portfolio.ipynb"
-Käytä: "jupyter notebook"
+Luo portfoliosi "my_portfolio.py"
+
+Voit käyttää ohjelmaa joko ajamalla "jupyter notebook" tai "streamlit run streamlit_app.py"

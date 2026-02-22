@@ -6,3 +6,6 @@ matplotlib
 quantstats
 seaborn
 plotly
+streamlit
+scipy
+ipykernel
