@@ -145,7 +145,7 @@ with st.sidebar:
 
     st.markdown('<div class="section-header">Date Range</div>', unsafe_allow_html=True)
     start_date = st.date_input("Start date", date.fromisoformat(_p.start_date), min_value=date(1980, 1, 1), max_value=date.today()).strftime('%Y-%m-%d')
-    end_date   = st.date_input("End date", date.fromisoformat(_p.end_date), min_value=date(1980, 1, 1), max_value=date.today()).strftime('%Y-%m-%d')
+    end_date   = st.date_input("End date",   date.today() - timedelta(days=1), min_value=date(1980, 1, 1), max_value=date.today()).strftime('%Y-%m-%d')
     st.caption(f"End date: {end_date}")
 
     st.markdown('<div class="section-header">Parameters</div>', unsafe_allow_html=True)
@@ -157,6 +157,29 @@ with st.sidebar:
     safe_withdrawal_rate     = st.slider("Safe withdrawal rate (SWR)", 0.0, 10.0, float(_p.safe_withdrawal_rate * 100), 0.1, format="%.1f%%") / 100
 
     run = st.button("Run Analysis", type="primary", use_container_width=True)
+
+    st.markdown('<div class="section-header">Save Configuration</div>', unsafe_allow_html=True)
+    if st.button("Save changes to my_portfolio", use_container_width=True):
+        content = f"""from datetime import datetime, timedelta
+
+        tickers = {[t.strip() for t in tickers_input.split(",") if t.strip()]}
+        weights = {[float(w.strip()) for w in weights_input.split(",") if w.strip()]}
+        portfolio = dict(zip(tickers, weights))
+
+        asset_classes = dict(zip(tickers, {[a.strip() for a in asset_class_input.split(",") if a.strip()]}))
+
+        start_date = '{start_date}'
+        end_date = '{end_date}'
+
+        risk_free_rate = {risk_free_rate}
+        initial_investment = {initial_investment}
+        monthly_investment = {monthly_investment}
+        custom_annualized_return = {custom_annualized_return}
+        safe_withdrawal_rate = {safe_withdrawal_rate}
+        """
+        with open("my_portfolio.py", "w") as f:
+            f.write(content)
+        st.success("Tallennettu! Käynnistä Streamlit uudelleen ladataksesi uudet oletusarvot.")
 
 
 # ── Parse inputs ─────────────────────────────────────────────────────────────
