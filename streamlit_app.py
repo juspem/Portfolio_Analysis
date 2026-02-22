@@ -664,9 +664,9 @@ with tab_alloc:
     ASSET_GROUP_COLORS = [
         (['etf', 'stocks', 'fund', 'index', 'tracker', 'ishares', 'vanguard',
           'msci', 'sp500', 's&p', 'nasdaq', 'dow', 'russell', 'country etf',
-          'sector etf', 'bond etf', 'equity etf', 'eft'],       '#3498db'),  # blue
+          'sector etf', 'bond etf', 'equity etf', 'eft'],       "#2e80b8"),  # blue
         (['stock', 'equity', 'share', 'growth', 'value', 'small cap',
-          'mid cap', 'large cap', 'dividend'],                    '#e74c3c'),  # red
+          'mid cap', 'large cap', 'dividend'],                    "#d44535"),  # red
         (['cash', 'money market', 'savings', 'deposit', 'liquidity',
           # Fiat spot pairs (Yahoo Finance format)
           'eurusd=x', 'usdeur=x', 'gbpusd=x', 'usdgbp=x', 'usdjpy=x',
@@ -677,7 +677,7 @@ with tab_alloc:
           'usdbrl=x', 'usdmxn=x', 'usdzar=x', 'usdkrw=x',
           # Generic currency keywords
           'eurusd', 'gbpusd', 'usdjpy', 'usdchf', 'usdcad', 'audusd',
-          'nzdusd', 'usd', 'eur', 'gbp', 'jpy', 'chf'],          '#2ecc71'),  # green
+          'nzdusd', 'usd', 'eur', 'gbp', 'jpy', 'chf'],          "#29b864"),  # green
         (['bond', 'fixed income', 'treasury', 'gilt', 'note',
           'corporate bond', 'municipal', 'high yield', 'duration'],  '#f39c12'),  # orange
         (['reit', 'real estate', 'property', 'infrastructure'],  '#e67e22'),  # dark orange
@@ -740,7 +740,7 @@ with tab_alloc:
                 return color
         return '#7f8c8d'  # fallback gray
 
-    def get_ticker_colors(ticker_list, asset_classes_dict):
+    def get_ticker_colors(ticker_list, asset_classes_dict, sizes):
         """Each ticker gets its own shade derived from its asset group color.
         Falls back to matching the ticker symbol itself when asset class gives no match."""
         import colorsys
@@ -759,15 +759,23 @@ with tab_alloc:
             b = int(base_hex[5:7], 16) / 255
             h, s, v = colorsys.rgb_to_hsv(r, g, b)
             n = len(group_tickers)
-            for idx, t in enumerate(group_tickers):
+            # Sort tickers in group by weight descending — largest gets base color
+            group_tickers_sorted = sorted(
+                group_tickers,
+                key=lambda t: ticker_list.index(t)
+            )
+            weights_in_group = [sizes[ticker_list.index(t)] for t in group_tickers_sorted]
+            # Re-sort by weight descending so biggest gets idx=0 (base color)
+            group_tickers_sorted = [t for _, t in sorted(
+                zip(weights_in_group, group_tickers_sorted), reverse=True)]
+            for idx, t in enumerate(group_tickers_sorted):
                 if n == 1:
                     new_h, new_s, new_v = h, s, v
                 else:
-                    # Spread hue up to ±25° and vary brightness significantly
-                    hue_spread = 0.10  # ~25 degrees in 0-1 scale
-                    new_h = (h + (idx - (n-1)/2) * hue_spread / max(n-1, 1)) % 1.0
-                    new_s = min(1.0, max(0.4, s - idx * 0.10))
-                    new_v = min(1.0, max(0.5, v + (idx * 0.20) - ((n-1) * 0.09)))
+                    # Keep hue identical, only brighten each step
+                    new_h = h
+                    new_s = max(0.25, s - idx * 0.20)
+                    new_v = min(1.0, v + idx * 0.22)
                 nr, ng, nb = colorsys.hsv_to_rgb(new_h, new_s, new_v)
                 ticker_color_map[t] = '#{:02x}{:02x}{:02x}'.format(
                     int(nr * 255), int(ng * 255), int(nb * 255))
@@ -800,7 +808,7 @@ with tab_alloc:
 
     with col1:
         # Ticker pie
-        ticker_colors = get_ticker_colors(tickers, asset_classes)
+        ticker_colors = get_ticker_colors(tickers, asset_classes, weights_raw)
         fig, ax = plt.subplots(figsize=(6, 5))
         fig.patch.set_facecolor(PLOT_BG)
         draw_pie(ax, weights_raw, tickers, ticker_colors, "By Ticker")
