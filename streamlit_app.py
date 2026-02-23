@@ -174,6 +174,16 @@ def dollar_axis(ax):
     """Apply smart dollar formatting to a matplotlib Y axis."""
     ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: fmt_dollar(x)))
 
+def pct_axis(ax, decimals=1, multiply=False):
+    """Apply % suffix to Y axis tick labels.
+    multiply=True: values are in decimal form (0.05) and need ×100 first.
+    multiply=False: values are already in percent form (5.0).
+    """
+    if multiply:
+        ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"{x*100:.{decimals}f}%"))
+    else:
+        ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"{x:.{decimals}f}%"))
+
 
 # ── Sidebar – Portfolio Configuration ────────────────────────────────────────
 with st.sidebar:
@@ -562,20 +572,23 @@ if tab_perf:
                 color=np.where(p_ret.values >= 0, ACCENT, ACCENT2), width=1, alpha=0.8)
     axes[0].set_ylabel("Daily Return")
     axes[0].set_title("Daily Returns")
+    pct_axis(axes[0], decimals=1, multiply=True)
 
     # 2. Cumulative returns
     cum = (1 + p_ret).cumprod() - 1
     axes[1].plot(cum.index, cum.values * 100, color=ACCENT, linewidth=2)
     axes[1].fill_between(cum.index, 0, cum.values * 100, alpha=0.15, color=ACCENT)
-    axes[1].set_ylabel("Cumulative Return (%)")
+    axes[1].set_ylabel("Cumulative Return")
     axes[1].set_title("Cumulative Return")
+    pct_axis(axes[1], decimals=0)
 
     # 3. Rolling 30-day volatility
     roll_vol = p_ret.rolling(30).std() * np.sqrt(252) * 100
     axes[2].plot(roll_vol.index, roll_vol.values, color=ACCENT4, linewidth=1.5)
     axes[2].fill_between(roll_vol.index, 0, roll_vol.values, alpha=0.2, color=ACCENT4)
-    axes[2].set_ylabel("Annualized Vol (%)")
+    axes[2].set_ylabel("Annualized Vol")
     axes[2].set_title("30-Day Rolling Volatility")
+    pct_axis(axes[2], decimals=1)
 
     apply_style(fig, axes)
     fig.tight_layout(pad=2)
@@ -598,8 +611,11 @@ if tab_perf:
         fig, ax = plt.subplots(figsize=(12, max(3, len(pivot) * 0.5 + 1)))
         sns.heatmap(pivot * 100, annot=True, fmt=".1f", cmap='RdYlGn',
                     center=0, linewidths=0.5, linecolor='#0f0f0f',
-                    annot_kws={'size': 8}, ax=ax, cbar_kws={'label': 'Return %'})
-        ax.set_title("Monthly Returns (%)")
+                    annot_kws={'size': 8}, ax=ax, cbar_kws={'label': 'Return', 'format': mticker.FuncFormatter(lambda x, _: f"{x:.1f}%")})
+        # Add % suffix to each annotated cell
+        for t in ax.texts:
+            t.set_text(t.get_text() + "%")
+        ax.set_title("Monthly Returns")
         ax.set_xlabel("")
         apply_style(fig, [ax])
         st.pyplot(fig)
@@ -612,8 +628,9 @@ if tab_perf:
     colors_bar = [ACCENT if v >= 0 else ACCENT2 for v in annual.values]
     ax.bar(annual.index.year, annual.values * 100, color=colors_bar, width=0.6)
     ax.axhline(0, color='#555', linewidth=0.8)
-    ax.set_ylabel("Return (%)")
+    ax.set_ylabel("Return")
     ax.set_title("Annual Returns")
+    pct_axis(ax, decimals=0)
     apply_style(fig, [ax])
     st.pyplot(fig)
     plt.close()
@@ -662,9 +679,10 @@ if tab_risk:
     fig, ax = plt.subplots(figsize=(12, 4))
     ax.fill_between(dd.index,   dd.values   * 100, 0, color=ACCENT2, alpha=0.6, label="Portfolio")
     ax.fill_between(dd_b.index, dd_b.values * 100, 0, color=ACCENT3, alpha=0.3, label=benchmark_ticker)
-    ax.set_ylabel("Drawdown (%)")
+    ax.set_ylabel("Drawdown")
     ax.set_title("Underwater Chart")
     ax.legend(fontsize=9)
+    pct_axis(ax, decimals=1)
     apply_style(fig, [ax])
     st.pyplot(fig)
     plt.close()
@@ -676,10 +694,11 @@ if tab_risk:
     ax.hist(b_ret.values * 100, bins=80, color=ACCENT3, alpha=0.4, edgecolor='none', label=benchmark_ticker)
     v95 = var_95(p_ret) * 100
     ax.axvline(v95, color=ACCENT2, linewidth=1.5, linestyle='--', label=f"VaR 95%: {v95:.2f}%")
-    ax.set_xlabel("Daily Return (%)")
+    ax.set_xlabel("Daily Return")
     ax.set_ylabel("Frequency")
     ax.set_title("Return Distribution")
     ax.legend(fontsize=9)
+    ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"{x:.1f}%"))
     apply_style(fig, [ax])
     st.pyplot(fig)
     plt.close()
@@ -787,9 +806,11 @@ if tab_bench:
     ax.axhline(0, color='#444', linewidth=0.5)
     ax.axvline(0, color='#444', linewidth=0.5)
     ax.set_xlabel(f"{benchmark_ticker} Daily Return (%)")
-    ax.set_ylabel("Portfolio Daily Return (%)")
+    ax.set_ylabel("Portfolio Daily Return")
     ax.set_title("Portfolio vs Benchmark")
     ax.legend(fontsize=9)
+    pct_axis(ax, decimals=1)
+    ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"{x:.1f}%"))
     apply_style(fig, [ax])
     st.pyplot(fig)
     plt.close()
