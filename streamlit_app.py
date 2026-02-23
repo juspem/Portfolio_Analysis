@@ -305,24 +305,35 @@ with st.sidebar:
     # After first run: never block the UI again even if params change
     run = st.session_state.get("analysis_run", False) or st.session_state.get("has_run_once", False)
 
-    st.markdown('<div class="section-header">Save Configuration</div>', unsafe_allow_html=True)
-    if st.button("Save settings", use_container_width=True):
-        _save_config({
-            "tickers_input":           tickers_input,
-            "weights_input":           weights_input,
-            "asset_class_input":       asset_class_input,
-            "start_date":              start_date,
-            "risk_free_rate":          risk_free_rate,
-            "benchmark_ticker":        benchmark_ticker,
-            "initial_investment":      initial_investment,
-            "monthly_investment":      monthly_investment,
-            "custom_annualized_return":custom_annualized_return,
-            "safe_withdrawal_rate":    safe_withdrawal_rate,
-            "purchase_currency":       purchase_currency,
-            "display_currency":        display_currency,
-        })
-        st.success("Saved to portfolio_config.json")
-        
+    st.markdown('<div class="section-header">Configuration Management</div>', unsafe_allow_html=True)
+    
+    # Valmistellaan nykyiset asetukset sanakirjana
+    current_config = {
+        "tickers_input":           tickers_input,
+        "weights_input":           weights_input,
+        "asset_class_input":       asset_class_input,
+        "start_date":              str(start_date),
+        "risk_free_rate":          risk_free_rate,
+        "benchmark_ticker":        benchmark_ticker,
+        "initial_investment":      initial_investment,
+        "monthly_investment":      monthly_investment,
+        "custom_annualized_return":custom_annualized_return,
+        "safe_withdrawal_rate":    safe_withdrawal_rate,
+        "purchase_currency":       purchase_currency,
+        "display_currency":        display_currency,
+    }
+
+    # "Tallenna minne haluat" -ominaisuus (Latauspainike selaimessa)
+    config_json_bytes = json.dumps(current_config, indent=2, ensure_ascii=False).encode('utf-8')
+    st.download_button(
+        label="Download configuration",
+        data=config_json_bytes,
+        file_name="portfolio_config.json", # Oletusnimi, selaimessa voit muuttaa
+        mime="application/json",
+        use_container_width=True,
+    )
+
+    # Alkuperäinen Reset-nappi
     if os.path.exists(_CONFIG_FILE):
         if st.button("Reset to defaults", use_container_width=True):
             os.remove(_CONFIG_FILE)
