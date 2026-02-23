@@ -447,7 +447,7 @@ if isinstance(data, pd.Series):
 available = [t for t in tickers if t in data.columns]
 
 if len(available) == 0:
-    st.error("Yhtään tickerä ei saatu ladattua. Tarkista yhteys ja tickerien nimet.")
+    st.error("No tickers could be loaded. Check the connection and ticker names.")
     st.stop()
 
 data      = data[available]
