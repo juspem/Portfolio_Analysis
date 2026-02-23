@@ -232,11 +232,16 @@ tickers      = [t.strip() for t in tickers_input.split(",") if t.strip()]
 weights_raw  = [float(w.strip()) for w in weights_input.split(",") if w.strip()]
 asset_classes_raw = [a.strip() for a in asset_class_input.split(",") if a.strip()]
 
+n_tickers = len(tickers)
+n_weights = len(weights_raw)
+
+
 weight_sum = sum(weights_raw)
-if abs(weight_sum - 1.0) > 1e-4:
-    st.sidebar.warning(f"Weights sum to {weight_sum:.4f}, not 1.0")
 
 portfolio     = dict(zip(tickers, weights_raw))
+# If only one asset class is given, apply it to all tickers
+if len(asset_classes_raw) == 1:
+    asset_classes_raw = asset_classes_raw * len(tickers)
 asset_classes = dict(zip(tickers, asset_classes_raw))
 weights       = np.array(weights_raw)
 
@@ -244,8 +249,20 @@ weights       = np.array(weights_raw)
 st.markdown("# Portfolio Analysis")
 st.caption(f"Period: {start_date} to {end_date}  |  Benchmark: {benchmark_ticker}  |  Risk-free rate: {risk_free_rate:.2%}")
 
+if n_tickers == 0:
+    st.error("No tickers entered.")
+    st.stop()
+elif n_weights != n_tickers:
+    st.error("Number of tickers do not match the number of weights.")
+    st.stop()
+elif len(asset_classes_raw) > 1 and len(asset_classes_raw) != n_tickers:
+    st.error("Number of asset classes do not match the number of tickers.")
+    st.stop()
+elif abs(weight_sum - 1.0) > 1e-4:
+    st.error(f"Weights do not add up to 1 (current sum: {weight_sum:.4f}).")
+    st.stop()
+
 if not run:
-    # Only shown on very first visit before any analysis has been run
     st.info("Configure your portfolio in the sidebar and click **Run Analysis**.")
     st.stop()
 
@@ -269,23 +286,27 @@ with st.spinner("Fetching market data..."):
     data      = load_data(tickers, start_date, end_date)
     bench_raw = load_benchmark(benchmark_ticker, start_date, end_date)
 
-# Align columns to ticker order
-if len(tickers) > 1:
-    available = [t for t in tickers if t in data.columns]
+# Align columns to ticker order -- available always defined
+if isinstance(data, pd.Series):
+    data = data.to_frame(name=tickers[0])
 
-    if len(available) == 0:
-        st.error("Yhtään tickeriä ei saatu ladattua. Tarkista yhteys ja tickerien nimet.")
-        st.stop()
+available = [t for t in tickers if t in data.columns]
 
-    data = data[available]
-    w_aligned = np.array([weights_raw[tickers.index(t)] for t in available])
-    w_aligned = w_aligned / w_aligned.sum()
-else:
-    w_aligned = np.array(weights_raw)
-    w_aligned = w_aligned / w_aligned.sum()
+if len(available) == 0:
+    st.error("Yhtään tickerä ei saatu ladattua. Tarkista yhteys ja tickerien nimet.")
+    st.stop()
+
+data      = data[available]
+w_aligned = np.array([weights_raw[tickers.index(t)] for t in available])
+w_aligned = w_aligned / w_aligned.sum()
 
 # Returns
-returns           = data.pct_change(fill_method=None).dropna(how='all').fillna(0)
+returns = data.pct_change(fill_method=None).dropna(how='all').fillna(0)
+
+if returns.shape[1] != len(w_aligned):
+    st.warning("Number of tickers do not match the number of weights.")
+    st.stop()
+
 portfolio_returns = returns.dot(w_aligned)
 portfolio_returns = pd.Series(portfolio_returns, name="Portfolio")
 
@@ -885,7 +906,7 @@ if tab_alloc:
             sizes,
             colors=colors,
             startangle=140,
-            wedgeprops=dict(linewidth=0.5, edgecolor="#000000"),
+            wedgeprops=dict(linewidth=0.5 if len(sizes) > 1 else 0, edgecolor="#0f0f0f"),
             explode=explode,
         )
         # Build legend labels: "TICKER  12.3%"
