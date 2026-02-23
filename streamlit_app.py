@@ -153,6 +153,28 @@ def apply_style(fig, ax_list=None):
         ax.grid(True, color='#2a2a2a', linewidth=0.5, alpha=0.8)
 
 
+# ── Global dollar formatter ───────────────────────────────────────────────────
+import matplotlib.ticker as mticker
+
+def fmt_dollar(value):
+    """Format an actual dollar value into a readable string."""
+    a = abs(value)
+    if a < 10_000:
+        return f"${value:,.0f}"
+    elif a < 1_000_000:
+        return f"${value/1_000:,.0f}k"
+    elif a < 1_000_000_000:
+        return f"${value/1_000_000:,.2f}M"
+    elif a < 1_000_000_000_000:
+        return f"${value/1_000_000_000:,.2f}B"
+    else:
+        return f"${value/1_000_000_000_000:,.2f}T"
+
+def dollar_axis(ax):
+    """Apply smart dollar formatting to a matplotlib Y axis."""
+    ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: fmt_dollar(x)))
+
+
 # ── Sidebar – Portfolio Configuration ────────────────────────────────────────
 with st.sidebar:
     st.markdown("## Portfolio Analysis")
@@ -519,8 +541,9 @@ if tab_overview:
     ax.plot(cum_p.index, cum_p.values, color=ACCENT,  linewidth=2,   label="Portfolio")
     ax.plot(cum_b.index, cum_b.values, color=ACCENT3, linewidth=1.5, label=benchmark_ticker, alpha=0.7)
     ax.fill_between(cum_p.index, initial_investment, cum_p.values, alpha=0.1, color=ACCENT)
-    ax.set_ylabel(f"Value ($)")
+    ax.set_ylabel("Value")
     ax.legend(fontsize=9)
+    dollar_axis(ax)
     apply_style(fig, [ax])
     st.pyplot(fig)
     plt.close()
@@ -717,9 +740,10 @@ if tab_bench:
     cum_b = (1 + b_ret).cumprod() * initial_investment
     ax.plot(cum_p.index, cum_p.values, color=ACCENT,  linewidth=2,   label="Portfolio")
     ax.plot(cum_b.index, cum_b.values, color=ACCENT3, linewidth=1.5, label=benchmark_ticker, alpha=0.8)
-    ax.set_ylabel("Value ($)")
+    ax.set_ylabel("Value")
     ax.set_title("Cumulative Growth Comparison")
     ax.legend(fontsize=9)
+    dollar_axis(ax)
     apply_style(fig, [ax])
     st.pyplot(fig)
     plt.close()
@@ -1148,6 +1172,13 @@ if tab_fi:
             ax.axvspan(acc_end_date, proj_dates[-1], alpha=0.04, color=ACCENT2, zorder=0)
             ax.axvline(acc_end_date, color="white", linewidth=1.2, linestyle=':', alpha=0.6)
 
+        # ── Dollar formatter for $k values (wraps global fmt_dollar) ────────
+        def fmt_dollars(value_k):
+            return fmt_dollar(value_k * 1000)
+
+        def _yaxis_fmt(x, pos):
+            return fmt_dollars(x)
+
         # Pre-simulate all scenarios to determine Y axis range from data only
         all_sim_data = {}
         for spend_k, label, color in scenarios:
@@ -1197,7 +1228,7 @@ if tab_fi:
             # FI required NW target line (only if SWR set)
             if has_swr:
                 target = spend_k / safe_withdrawal_rate
-                legend_label = f"{label} target: ${target:,.0f}k"
+                legend_label = f"{label} FI target: {fmt_dollars(target)}"
                 if target <= y_top:
                     # Target is within chart range — draw horizontal line
                     ax.axhline(target, color=color, linewidth=0.8, linestyle=':',
@@ -1212,10 +1243,11 @@ if tab_fi:
                 else:
                     # Target above chart — invisible proxy so it still appears in legend
                     ax.plot([], [], color=color, linewidth=0.8, linestyle=':',
-                            alpha=0.5, label=legend_label)
+                            alpha=0.5, label=legend_label + " ↑ (above chart)")
 
         ax.axhline(0, color='white', linewidth=0.6, alpha=0.3)
-        ax.set_ylabel("Net Worth ($k)")
+        ax.yaxis.set_major_formatter(mticker.FuncFormatter(_yaxis_fmt))
+        ax.set_ylabel("Net Worth")
         ax.set_title(
             f"FI Forecast — {return_label} return  |  "
             f"${monthly_investment}/mo contribution until yr {withdrawal_start_year}  |  "
@@ -1256,7 +1288,7 @@ if tab_fi:
                 acc_series  = series.iloc[:withdrawal_start_mo + 1]
                 cross       = acc_series[acc_series >= target]
                 yrs_to_fi   = (cross.index[0] - datetime.today()).days / 365 if not cross.empty else None
-                fi_target   = f"${target:.0f}k"
+                fi_target   = fmt_dollars(target)
                 yrs_str     = f"{yrs_to_fi:.1f}" if yrs_to_fi else f">{withdrawal_start_year}"
             else:
                 fi_target = "—"
@@ -1268,7 +1300,7 @@ if tab_fi:
             if exhausted:
                 longevity = f"{exhausted[0] / 12:.0f} yrs (exhausted)"
             else:
-                longevity = f"{(total_horizon_years - withdrawal_start_year)}+ yrs (${vals[-1]:.0f}k left)"
+                longevity = f"{(total_horizon_years - withdrawal_start_year)}+ yrs ({fmt_dollars(vals[-1])} left)"
 
             monthly_w = spend_k / 12
             fi_rows.append({
@@ -1276,7 +1308,7 @@ if tab_fi:
                 "Annual Spend":          f"${spend_k}k  (${monthly_w:.1f}k/mo)",
                 "Required NW (SWR)":     fi_target,
                 "Years to FI target":    yrs_str,
-                "NW at retirement":      f"${nw_at_retirement:.0f}k",
+                "NW at retirement":      fmt_dollars(nw_at_retirement),
                 "Portfolio lasts":       longevity,
             })
 
@@ -1324,22 +1356,24 @@ if tab_fi:
         surviving = np.sum(mc_arr[:, -1] > 0) / len(mc_paths) * 100
         exhausted_paths = np.sum(mc_arr[:, -1] <= 0)
 
-        ax.set_ylabel("Net Worth ($k)")
+        ax.set_ylabel("Net Worth")
         ax.set_title(
             f"{total_horizon_years}-yr Monte Carlo — {mc_spend} (${mc_spend_k}k/yr spend)  |  "
             f"Withdrawals start yr {withdrawal_start_year}  |  "
             f"Portfolio survives in {surviving:.0f}% of scenarios"
         )
         ax.legend(fontsize=9)
+        dollar_axis_k = mticker.FuncFormatter(lambda x, _: fmt_dollars(x))
+        ax.yaxis.set_major_formatter(dollar_axis_k)
         apply_style(fig, [ax])
         st.pyplot(fig)
         plt.close()
 
         st.caption(
             f"At year {total_horizon_years} — "
-            f"Median: ${p50[-1]:.0f}k  |  "
-            f"10th pct: ${p10[-1]:.0f}k  |  "
-            f"90th pct: ${p90[-1]:.0f}k  |  "
+            f"Median: {fmt_dollars(p50[-1])}  |  "
+            f"10th pct: {fmt_dollars(p10[-1])}  |  "
+            f"90th pct: {fmt_dollars(p90[-1])}  |  "
             f"Portfolio exhausted in {exhausted_paths:.0f}/{int(n_sim)} scenarios ({100-surviving:.0f}%)"
         )
 
