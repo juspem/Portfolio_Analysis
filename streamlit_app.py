@@ -236,8 +236,8 @@ with st.sidebar:
     st.markdown('<div class="section-header">Parameters</div>', unsafe_allow_html=True)
     risk_free_rate           = st.slider("Risk-free rate",           0.0, 10.0, float(_cv("risk_free_rate", _p.risk_free_rate) * 100), 0.1, format="%.1f%%") / 100
     benchmark_ticker         = st.text_input("Benchmark ticker", _cv("benchmark_ticker", "SPY"))
-    initial_investment       = st.number_input("Initial investment ($)", 1000, 10_000_000, _cv("initial_investment", _p.initial_investment), step=500)
-    monthly_investment       = st.number_input("Monthly contribution ($)", 0, 50_000, _cv("monthly_investment", _p.monthly_investment), step=100)
+    initial_investment       = st.number_input("Initial investment ($)", 0.01, 10_000_000.0, float(_cv("initial_investment", _p.initial_investment)), step=0.01)
+    monthly_investment       = st.number_input("Monthly contribution ($)", 0.0, 50_000.0, float(_cv("monthly_investment", _p.monthly_investment)), step=0.01)
     _car_options = ["Historical"] + [f"{v/10:.1f}%" for v in range(0, 301)]  # 0.0%..30.0%
     _car_saved = _cv("custom_annualized_return", _p.custom_annualized_return or 0)
     _car_default = "Historical" if _car_saved == 0 else f"{_car_saved*100:.1f}%"
@@ -551,6 +551,8 @@ if tab_overview:
         </div>"""
 
     col1, col2, col3, col4 = st.columns(4)
+    current_portfolio_value = (1 + p_ret).cumprod().iloc[-1] * initial_investment
+    total_gain = current_portfolio_value - initial_investment
     with col1:
         st.markdown(metric_html("Annual Return",     m["Annual Return"]),     unsafe_allow_html=True)
         st.markdown(metric_html("Annual Volatility", m["Annual Volatility"]), unsafe_allow_html=True)
@@ -563,6 +565,25 @@ if tab_overview:
     with col4:
         st.markdown(metric_html("VaR 95%",  m["VaR 95%"],  positive_good=False), unsafe_allow_html=True)
         st.markdown(metric_html("CVaR 95%", m["CVaR 95%"], positive_good=False), unsafe_allow_html=True)
+
+    st.markdown('<div class="section-header">Portfolio Value</div>', unsafe_allow_html=True)
+    pv_col1, pv_col2, pv_col3 = st.columns(3)
+    with pv_col1:
+        st.markdown(f"""<div class="metric-card">
+            <div class="metric-label">Current Value</div>
+            <div class="metric-value positive">${current_portfolio_value:,.2f}</div>
+        </div>""", unsafe_allow_html=True)
+    with pv_col2:
+        st.markdown(f"""<div class="metric-card">
+            <div class="metric-label">Initial Investment</div>
+            <div class="metric-value">${initial_investment:,.2f}</div>
+        </div>""", unsafe_allow_html=True)
+    with pv_col3:
+        gain_cls = "positive" if total_gain >= 0 else "negative"
+        st.markdown(f"""<div class="metric-card">
+            <div class="metric-label">Total Gain / Loss</div>
+            <div class="metric-value {gain_cls}">${total_gain:,.2f}</div>
+        </div>""", unsafe_allow_html=True)
 
     st.markdown('<div class="section-header">Holdings - Links to Yahoo Finance</div>', unsafe_allow_html=True)
 
@@ -1128,11 +1149,11 @@ if tab_corr:
         plt.close()
 
         if len(tickers) >= 2:
-            st.markdown('<div class="section-header">36-Month Rolling Correlation</div>', unsafe_allow_html=True)
+            st.markdown('<div class="section-header">Rolling Correlation</div>', unsafe_allow_html=True)
             default_window = min(36, len(monthly_r) - 1)
             window_size = st.slider("Rolling window (months)", 6, 60, max(6, default_window))
-            if len(monthly_r) < window_size:
-                st.warning(f"Dataa on vain {len(monthly_r)} kuukautta — tarvitaan vähintään {window_size}. Pienennä ikkunaa sliderilla.")
+            if len(monthly_r) - 1 < window_size:
+                st.warning(f"Only {len(monthly_r) - 1} months of data available.")
             else:
                 fig, ax = plt.subplots(figsize=(12, 4))
                 color_cycle = [ACCENT, ACCENT3, ACCENT4, ACCENT2, '#b19cd9']
