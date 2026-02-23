@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, date
 from itertools import combinations
 from collections import defaultdict
 from matplotlib.colors import LinearSegmentedColormap
+from matplotlib.ticker import MaxNLocator
 import warnings
 import io
 import os
@@ -118,7 +119,7 @@ h1, h2, h3 {{
 
 .stApp {{
     background-color: {'#0f0f0f'};
-    color: {'#e8e8e8'};
+    color: {PLOT_FG};
 }}
 
 section[data-testid="stSidebar"] {{
@@ -137,7 +138,7 @@ section[data-testid="stSidebar"] {{
 .metric-label {{
     font-family: 'IBM Plex Mono', monospace;
     font-size: 0.7rem;
-    color: #666;
+    color: {DARK};
     text-transform: uppercase;
     letter-spacing: 0.1em;
     margin-bottom: 0.3rem;
@@ -147,7 +148,7 @@ section[data-testid="stSidebar"] {{
     font-family: 'IBM Plex Mono', monospace;
     font-size: 1.4rem;
     font-weight: 600;
-    color: #e8e8e8;
+    color: {PLOT_FG};
 }}
 
 .metric-value.positive {{ color: {ACCENT}; }}
@@ -179,6 +180,25 @@ div[data-testid="stMetric"] {{
 .stDataFrame {{
     font-family: 'IBM Plex Mono', monospace;
     font-size: 0.8rem;
+}}
+/* Etsitään painike (button), jonka sisällä on lihavoitu (strong) teksti */
+div[data-testid="stColumn"] button:has(strong) {{
+    background-color: {ACCENT2} !important; /* Streamlitin punainen tai oma värisi */
+    border-color: {ACCENT2} !important;
+    color: {PLOT_FG} !important;
+}}
+
+/* Tyyli lihavoidulle tekstille napin sisällä (koko ja paksuus) */
+div[data-testid="stColumn"] button strong {{
+    font-weight: 900 !important;
+    font-size: 1.2rem !important;
+    color: {PLOT_FG} !important;
+}}
+
+/* Hover-efekti aktiiviselle napille (pysyy punaisena) */
+div[data-testid="stColumn"] button:has(strong):hover {{
+    background-color: {ACCENT2} !important;
+    border-color: {ACCENT2} !important;
 }}
 
 </style>
@@ -231,13 +251,12 @@ with st.sidebar:
     st.markdown('<div class="section-header">Date Range</div>', unsafe_allow_html=True)
     start_date = st.date_input("Start date", date.fromisoformat(_cv("start_date", _p.start_date)), min_value=date(1980, 1, 1), max_value=date.today()).strftime('%Y-%m-%d')
     end_date   = st.date_input("End date",   date.today() - timedelta(days=1), min_value=date(1980, 1, 1), max_value=date.today()).strftime('%Y-%m-%d')
-    st.caption(f"End date: {end_date}")
 
     st.markdown('<div class="section-header">Parameters</div>', unsafe_allow_html=True)
     risk_free_rate           = st.slider("Risk-free rate",           0.0, 10.0, float(_cv("risk_free_rate", _p.risk_free_rate) * 100), 0.1, format="%.1f%%") / 100
     benchmark_ticker         = st.text_input("Benchmark ticker", _cv("benchmark_ticker", "SPY"))
-    initial_investment       = st.number_input("Initial investment ($)", 0.01, 10_000_000.0, float(_cv("initial_investment", _p.initial_investment)), step=0.01)
-    monthly_investment       = st.number_input("Monthly contribution ($)", 0.0, 50_000.0, float(_cv("monthly_investment", _p.monthly_investment)), step=0.01)
+    initial_investment       = st.number_input("Initial investment", 0.01, 10_000_000.0, float(_cv("initial_investment", _p.initial_investment)), step=0.01)
+    monthly_investment       = st.number_input("Monthly contribution", 0.0, 50_000.0, float(_cv("monthly_investment", _p.monthly_investment)), step=0.01)
     _car_options = ["Historical"] + [f"{v/10:.1f}%" for v in range(0, 301)]  # 0.0%..30.0%
     _car_saved = _cv("custom_annualized_return", _p.custom_annualized_return or 0)
     _car_default = "Historical" if _car_saved == 0 else f"{_car_saved*100:.1f}%"
@@ -251,6 +270,22 @@ with st.sidebar:
     )
     custom_annualized_return = 0.0 if _car_sel == "Historical" else float(_car_sel.replace("%", "")) / 100
     safe_withdrawal_rate     = st.slider("Safe withdrawal rate (SWR)", 0.0, 10.0, float(_cv("safe_withdrawal_rate", _p.safe_withdrawal_rate) * 100), 0.1, format="%.1f%%") / 100
+
+    st.markdown('<div class="section-header">Currency</div>', unsafe_allow_html=True)
+    _CURRENCIES = ["USD", "EUR", "GBP", "SEK", "NOK", "DKK", "CHF", "JPY", "CAD", "AUD"]
+    _CURRENCY_SYMBOLS = {"USD":"$","EUR":"€","GBP":"£","SEK":"kr","NOK":"kr","DKK":"kr","CHF":"Fr","JPY":"¥","CAD":"C$","AUD":"A$"}
+    purchase_currency = st.selectbox(
+        "Purchase currency",
+        _CURRENCIES,
+        index=_CURRENCIES.index(_cv("purchase_currency", "EUR")),
+        help="The currency you used to buy your positions. Initial investment is entered in this currency."
+    )
+    display_currency = st.selectbox(
+        "Display currency",
+        _CURRENCIES,
+        index=_CURRENCIES.index(_cv("display_currency", _cv("purchase_currency", "EUR"))),
+        help="The currency to display current value in."
+    )
 
     # Track whether analysis has ever been run (persists for the session)
     if "has_run_once" not in st.session_state:
@@ -283,8 +318,11 @@ with st.sidebar:
             "monthly_investment":      monthly_investment,
             "custom_annualized_return":custom_annualized_return,
             "safe_withdrawal_rate":    safe_withdrawal_rate,
+            "purchase_currency":       purchase_currency,
+            "display_currency":        display_currency,
         })
         st.success("Saved to portfolio_config.json")
+        
     if os.path.exists(_CONFIG_FILE):
         if st.button("Reset to defaults", use_container_width=True):
             os.remove(_CONFIG_FILE)
@@ -349,6 +387,58 @@ def load_benchmark(ticker, start, end):
 with st.spinner("Fetching market data..."):
     data      = load_data(tickers, start_date, end_date)
     bench_raw = load_benchmark(benchmark_ticker, start_date, end_date)
+
+# ── Per-ticker currency detection & FX conversion ────────────────────────────
+@st.cache_data(show_spinner=False)
+def get_ticker_currency(ticker):
+    """Return the currency yFinance reports for this ticker (e.g. 'EUR', 'USD')."""
+    try:
+        info = yf.Ticker(ticker).info
+        return info.get("currency", "USD").upper()
+    except Exception:
+        return "USD"
+
+@st.cache_data(show_spinner=False)
+def get_fx_rate(from_currency, to_currency, date_str):
+    """Return rate: 1 from_currency = X to_currency, on or near date_str."""
+    if from_currency == to_currency:
+        return 1.0
+    pair = f"{from_currency}{to_currency}=X"
+    target = pd.Timestamp(date_str)
+    start  = (target - pd.Timedelta(days=7)).strftime("%Y-%m-%d")
+    end    = (target + pd.Timedelta(days=2)).strftime("%Y-%m-%d")
+    try:
+        s = yf.download(pair, start=start, end=end, auto_adjust=True, progress=False)
+        if isinstance(s.columns, pd.MultiIndex):
+            s = s["Close"]
+        s = s.squeeze().dropna()
+        if s.empty:
+            return 1.0
+        idx = s.index.get_indexer([target], method="nearest")[0]
+        return float(s.iloc[idx])
+    except Exception:
+        return 1.0
+
+# Detect each ticker's native currency
+with st.spinner("Detecting ticker currencies..."):
+    ticker_currencies = {t: get_ticker_currency(t) for t in tickers}
+
+# Weighted portfolio currency: majority currency by weight
+_weighted_currencies = {}
+for t, w in zip(tickers, weights_raw):
+    c = ticker_currencies.get(t, "USD")
+    _weighted_currencies[c] = _weighted_currencies.get(c, 0) + w
+portfolio_native_currency = max(_weighted_currencies, key=_weighted_currencies.get)
+
+# Convert initial_investment (purchase_currency) → portfolio native currency at start_date
+fx_purchase_to_native = get_fx_rate(purchase_currency, portfolio_native_currency, start_date)
+initial_investment_native = initial_investment * fx_purchase_to_native
+
+# Convert portfolio native currency → display currency at end_date
+fx_native_to_display = get_fx_rate(portfolio_native_currency, display_currency, end_date)
+
+# Symbol for display currency
+disp_sym = _CURRENCY_SYMBOLS.get(display_currency, display_currency + " ")
 
 # Align columns to ticker order -- available always defined
 if isinstance(data, pd.Series):
@@ -551,8 +641,12 @@ if tab_overview:
         </div>"""
 
     col1, col2, col3, col4 = st.columns(4)
-    current_portfolio_value = (1 + p_ret).cumprod().iloc[-1] * initial_investment
-    total_gain = current_portfolio_value - initial_investment
+    current_portfolio_value_native = (1 + p_ret).cumprod().iloc[-1] * initial_investment_native
+    current_portfolio_value_disp   = current_portfolio_value_native * fx_native_to_display
+    initial_investment_disp        = initial_investment if purchase_currency == display_currency \
+                                     else initial_investment * fx_purchase_to_native * fx_native_to_display
+    total_gain_disp = current_portfolio_value_disp - initial_investment_disp
+    current_portfolio_value = current_portfolio_value_native  # alias for rest of file
     with col1:
         st.markdown(metric_html("Annual Return",     m["Annual Return"]),     unsafe_allow_html=True)
         st.markdown(metric_html("Annual Volatility", m["Annual Volatility"]), unsafe_allow_html=True)
@@ -567,22 +661,29 @@ if tab_overview:
         st.markdown(metric_html("CVaR 95%", m["CVaR 95%"], positive_good=False), unsafe_allow_html=True)
 
     st.markdown('<div class="section-header">Portfolio Value</div>', unsafe_allow_html=True)
+    _tc_str = ", ".join(f"{t} - {c}" for t,c in ticker_currencies.items() if t in available)
+    _fx_note = ""
+    if purchase_currency != portfolio_native_currency:
+        _fx_note += f" · {purchase_currency}→{portfolio_native_currency} @ {fx_purchase_to_native:.4f}"
+    if portfolio_native_currency != display_currency:
+        _fx_note += f" · {portfolio_native_currency}→{display_currency} @ {fx_native_to_display:.4f}"
+    st.caption(f"Ticker currencies: {_tc_str} | Portfolio native: {portfolio_native_currency} | Display: {display_currency}{_fx_note}")
     pv_col1, pv_col2, pv_col3 = st.columns(3)
     with pv_col1:
         st.markdown(f"""<div class="metric-card">
-            <div class="metric-label">Current Value</div>
-            <div class="metric-value positive">${current_portfolio_value:,.2f}</div>
+            <div class="metric-label">Current Value ({display_currency})</div>
+            <div class="metric-value positive">{disp_sym}{current_portfolio_value_disp:,.2f}</div>
         </div>""", unsafe_allow_html=True)
     with pv_col2:
         st.markdown(f"""<div class="metric-card">
-            <div class="metric-label">Initial Investment</div>
-            <div class="metric-value">${initial_investment:,.2f}</div>
+            <div class="metric-label">Initial Investment ({purchase_currency})</div>
+            <div class="metric-value">{_CURRENCY_SYMBOLS.get(purchase_currency, purchase_currency + ' ')}{initial_investment:,.2f}</div>
         </div>""", unsafe_allow_html=True)
     with pv_col3:
-        gain_cls = "positive" if total_gain >= 0 else "negative"
+        gain_cls = "positive" if total_gain_disp >= 0 else "negative"
         st.markdown(f"""<div class="metric-card">
-            <div class="metric-label">Total Gain / Loss</div>
-            <div class="metric-value {gain_cls}">${total_gain:,.2f}</div>
+            <div class="metric-label">Total Gain / Loss ({display_currency})</div>
+            <div class="metric-value {gain_cls}">{disp_sym}{total_gain_disp:,.2f}</div>
         </div>""", unsafe_allow_html=True)
 
     st.markdown('<div class="section-header">Holdings - Links to Yahoo Finance</div>', unsafe_allow_html=True)
@@ -598,13 +699,17 @@ if tab_overview:
     st.markdown('<div class="section-header">Cumulative Growth</div>', unsafe_allow_html=True)
 
     fig, ax = plt.subplots(figsize=(12, 4))
-    cum_p = (1 + p_ret).cumprod() * initial_investment
-    cum_b = (1 + b_ret).cumprod() * initial_investment
+    cum_p = (1 + p_ret).cumprod() * initial_investment_native
+    cum_b = (1 + b_ret).cumprod() * initial_investment_native
     ax.plot(cum_p.index, cum_p.values, color=ACCENT,  linewidth=2,   label="Portfolio")
     ax.plot(cum_b.index, cum_b.values, color=ACCENT3, linewidth=1.5, label=benchmark_ticker, alpha=0.7)
-    ax.fill_between(cum_p.index, initial_investment, cum_p.values, alpha=0.1, color=ACCENT)
+    ax.fill_between(cum_p.index, initial_investment_native, cum_p.values, alpha=0.1, color=ACCENT)
     ax.set_ylabel("Value")
     ax.legend(fontsize=9)
+    date_min = cum_p.index.min()
+    date_max = cum_p.index.max()
+    date_range = date_max - date_min
+    ax.set_xlim(date_min, date_max + (date_range * 0.01))
     dollar_axis(ax)
     apply_style(fig, [ax])
     st.pyplot(fig)
@@ -622,6 +727,8 @@ if tab_perf:
     # 1. Daily returns bar
     axes[0].bar(p_ret.index, p_ret.values,
                 color=np.where(p_ret.values >= 0, ACCENT, ACCENT2), width=1, alpha=0.8)
+    axes[0].set_xlim(left=p_ret.index.min() + ((p_ret.index.max() - p_ret.index.min()) * -0.003),
+                     right=p_ret.index.max() + ((p_ret.index.max() - p_ret.index.min()) * 0.003))
     axes[0].set_ylabel("Daily Return")
     axes[0].set_title("Daily Returns")
     pct_axis(axes[0], decimals=1, multiply=True)
@@ -630,6 +737,8 @@ if tab_perf:
     cum = (1 + p_ret).cumprod() - 1
     axes[1].plot(cum.index, cum.values * 100, color=ACCENT, linewidth=2)
     axes[1].fill_between(cum.index, 0, cum.values * 100, alpha=0.15, color=ACCENT)
+    axes[1].set_xlim(left=cum.index.min() + ((cum.index.max() - cum.index.min()) * -0.001),
+                     right=cum.index.max() + ((cum.index.max() - cum.index.min()) * 0.001))
     axes[1].set_ylabel("Cumulative Return")
     axes[1].set_title("Cumulative Return")
     pct_axis(axes[1], decimals=0)
@@ -638,6 +747,8 @@ if tab_perf:
     roll_vol = p_ret.rolling(30).std() * np.sqrt(252) * 100
     axes[2].plot(roll_vol.index, roll_vol.values, color=ACCENT4, linewidth=1.5)
     axes[2].fill_between(roll_vol.index, 0, roll_vol.values, alpha=0.2, color=ACCENT4)
+    axes[2].set_xlim(left=roll_vol.dropna().index.min() + ((roll_vol.dropna().index.max() - roll_vol.dropna().index.min()) * -0.001),
+                     right=roll_vol.dropna().index.max() + ((roll_vol.dropna().index.max() - roll_vol.dropna().index.min()) * 0.001))
     axes[2].set_ylabel("Annualized Vol")
     axes[2].set_title("30-Day Rolling Volatility")
     pct_axis(axes[2], decimals=1)
@@ -663,7 +774,8 @@ if tab_perf:
         fig, ax = plt.subplots(figsize=(12, max(3, len(pivot) * 0.5 + 1)))
         sns.heatmap(pivot * 100, annot=True, fmt=".1f", cmap='RdYlGn',
                     center=0, linewidths=0.5, linecolor='#0f0f0f',
-                    annot_kws={'size': 8}, ax=ax, cbar_kws={'label': 'Return', 'format': mticker.FuncFormatter(lambda x, _: f"{x:.1f}%")})
+                    annot_kws={'size': 8}, ax=ax,
+                    cbar_kws={'label': 'Return', 'format': mticker.FuncFormatter(lambda x, _: f"{x:.1f}%")})
         # Add % suffix to each annotated cell
         for t in ax.texts:
             t.set_text(t.get_text() + "%")
@@ -682,6 +794,7 @@ if tab_perf:
     ax.axhline(0, color='#555', linewidth=0.8)
     ax.set_ylabel("Return")
     ax.set_title("Annual Returns")
+    ax.xaxis.set_major_locator(MaxNLocator(integer=True))
     pct_axis(ax, decimals=0)
     apply_style(fig, [ax])
     st.pyplot(fig)
@@ -731,8 +844,10 @@ if tab_risk:
     fig, ax = plt.subplots(figsize=(12, 4))
     ax.fill_between(dd.index,   dd.values   * 100, 0, color=ACCENT2, alpha=0.6, label="Portfolio")
     ax.fill_between(dd_b.index, dd_b.values * 100, 0, color=ACCENT3, alpha=0.3, label=benchmark_ticker)
+    ax.set_xlim(left=dd.index.min() + (dd.index.max() - dd.index.min()) * -0.0015,
+                right=dd.index.max() + (dd.index.max() - dd.index.min()) * 0.0015)
     ax.set_ylabel("Drawdown")
-    ax.set_title("Underwater Chart")
+    ax.set_title("Drawdown Chart")
     ax.legend(fontsize=9)
     pct_axis(ax, decimals=1)
     apply_style(fig, [ax])
@@ -807,8 +922,8 @@ if tab_bench:
 
     # Cumulative comparison
     fig, ax = plt.subplots(figsize=(12, 4))
-    cum_p = (1 + p_ret).cumprod() * initial_investment
-    cum_b = (1 + b_ret).cumprod() * initial_investment
+    cum_p = (1 + p_ret).cumprod() * initial_investment_native
+    cum_b = (1 + b_ret).cumprod() * initial_investment_native
     ax.plot(cum_p.index, cum_p.values, color=ACCENT,  linewidth=2,   label="Portfolio")
     ax.plot(cum_b.index, cum_b.values, color=ACCENT3, linewidth=1.5, label=benchmark_ticker, alpha=0.8)
     ax.set_ylabel("Value")
@@ -1149,11 +1264,11 @@ if tab_corr:
         plt.close()
 
         if len(tickers) >= 2:
-            st.markdown('<div class="section-header">Rolling Correlation</div>', unsafe_allow_html=True)
+            st.markdown('<div class="section-header">36-Month Rolling Correlation</div>', unsafe_allow_html=True)
             default_window = min(36, len(monthly_r) - 1)
             window_size = st.slider("Rolling window (months)", 6, 60, max(6, default_window))
-            if len(monthly_r) - 1 < window_size:
-                st.warning(f"Only {len(monthly_r) - 1} months of data available.")
+            if len(monthly_r) < window_size:
+                st.warning(f"Only {len(monthly_r)} months of data available — need at least {window_size}. Reduce the window size with the slider.")
             else:
                 fig, ax = plt.subplots(figsize=(12, 4))
                 color_cycle = [ACCENT, ACCENT3, ACCENT4, ACCENT2, '#b19cd9']
@@ -1234,7 +1349,7 @@ if tab_fi:
         proj_dates           = pd.date_range(datetime.today(), periods=total_months + 1, freq='MS')
 
         # ── Current portfolio value: initial_investment grown through history ──
-        current_portfolio_value = (1 + p_ret).cumprod().iloc[-1] * initial_investment
+        current_portfolio_value = (1 + p_ret).cumprod().iloc[-1] * initial_investment_native
 
         # ── Helper: simulate one full path with two phases ──────────────────
         def simulate(annual_spend_k, deterministic=True, sig_m=0.0):
@@ -1379,7 +1494,7 @@ if tab_fi:
 
         # ── FI Summary table ────────────────────────────────────────────────
         st.markdown('<div class="section-header">FI Goals Summary</div>', unsafe_allow_html=True)
-        st.caption(f"Forecast starts from current portfolio value: ${current_portfolio_value:,.0f} (${initial_investment:,.0f} invested from {start_date}, grown at historical returns)")
+        st.caption(f"Forecast starts from current portfolio value: {disp_sym}{current_portfolio_value_disp:,.0f} ({portfolio_native_currency} {initial_investment_native:,.0f} invested from {start_date}, grown at historical returns)")
 
         fi_rows = []
         for spend_k, label, _ in scenarios:
