@@ -47,96 +47,17 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# ── Styling ───────────────────────────────────────────────────────────────────
-st.markdown("""
-<style>
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@300;400;600&display=swap');
-
-html, body, [class*="css"] {
-    font-family: 'IBM Plex Sans', sans-serif;
-}
-
-h1, h2, h3 {
-    font-family: 'IBM Plex Mono', monospace !important;
-    letter-spacing: -0.02em;
-}
-
-.stApp {
-    background-color: #0f0f0f;
-    color: #e8e8e8;
-}
-
-section[data-testid="stSidebar"] {
-    background-color: #161616;
-    border-right: 1px solid #2a2a2a;
-}
-
-.metric-card {
-    background: #1a1a1a;
-    border: 1px solid #2a2a2a;
-    border-left: 3px solid #c8f55a;
-    padding: 1rem 1.2rem;
-    margin-bottom: 0.5rem;
-}
-
-.metric-label {
-    font-family: 'IBM Plex Mono', monospace;
-    font-size: 0.7rem;
-    color: #666;
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
-    margin-bottom: 0.3rem;
-}
-
-.metric-value {
-    font-family: 'IBM Plex Mono', monospace;
-    font-size: 1.4rem;
-    font-weight: 600;
-    color: #e8e8e8;
-}
-
-.metric-value.positive { color: #c8f55a; }
-.metric-value.negative { color: #ff6b6b; }
-
-.section-header {
-    font-family: 'IBM Plex Mono', monospace;
-    font-size: 0.75rem;
-    color: #666;
-    text-transform: uppercase;
-    letter-spacing: 0.15em;
-    border-bottom: 1px solid #2a2a2a;
-    padding-bottom: 0.5rem;
-    margin: 2rem 0 1rem 0;
-}
-
-.stTabs [data-baseweb="tab"] {
-    font-family: 'IBM Plex Mono', monospace;
-    font-size: 0.8rem;
-    letter-spacing: 0.05em;
-}
-
-div[data-testid="stMetric"] {
-    background: #1a1a1a;
-    border: 1px solid #2a2a2a;
-    padding: 1rem;
-}
-
-.stDataFrame {
-    font-family: 'IBM Plex Mono', monospace;
-    font-size: 0.8rem;
-}
-</style>
-""", unsafe_allow_html=True)
-
-
 # ── Matplotlib dark theme ─────────────────────────────────────────────────────
 plt.style.use('dark_background')
-PLOT_BG    = '#1a1a1a'
-PLOT_FG    = '#e8e8e8'
-ACCENT     = '#c8f55a'
-ACCENT2    = '#ff6b6b'
-ACCENT3    = '#6bc5ff'
-ACCENT4    = '#ffa94d'
+PLOT_BG         = '#1a1a1a'
+PLOT_FG         = '#e8e8e8'
+ACCENT          = '#c8f55a'
+ACCENT2         = "#ff4b4b"
+ACCENT3         = '#6bc5ff'
+ACCENT4         = '#ffa94d'
+BUTTONHOVER     = '#ff2121'
+DARK            = '#666666'
+DARKER          = '#2a2a2a'
 
 def apply_style(fig, ax_list=None):
     fig.patch.set_facecolor(PLOT_BG)
@@ -152,6 +73,116 @@ def apply_style(fig, ax_list=None):
             spine.set_edgecolor('#2a2a2a')
         ax.grid(True, color='#2a2a2a', linewidth=0.5, alpha=0.8)
 
+# ── Styling ───────────────────────────────────────────────────────────────────
+
+st.markdown(f"""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@300;400;600&display=swap');
+            
+section[data-testid="stSidebar"] .stButton > button[kind="primary"] {{
+    background-color: {ACCENT2};
+    color: {PLOT_FG};
+    border: 1px solid {ACCENT2};
+}}
+
+section[data-testid="stSidebar"] .stButton > button[kind="primary"]:hover {{
+    background-color: {BUTTONHOVER};
+    color: {PLOT_FG};
+    border: 1px solid {BUTTONHOVER};
+}}
+
+.stSlider [data-baseweb="slider"] [role="slider"] {{
+    background-color: {ACCENT2};
+}}
+
+.stSlider [data-baseweb="slider"] [data-testid="stThumbValue"] {{
+    color: {ACCENT2};
+}}
+
+.stSlider [data-baseweb="slider"] div[data-testid="stSlider"] {{
+    color: {ACCENT2};
+}}
+
+st-ct {{
+    background-color: {ACCENT} !important;
+}}
+
+html, body, [class*="css"] {{
+    font-family: 'IBM Plex Sans', sans-serif;
+}}
+
+h1, h2, h3 {{
+    font-family: 'IBM Plex Mono', monospace !important;
+    letter-spacing: -0.02em;
+}}
+
+.stApp {{
+    background-color: {'#0f0f0f'};
+    color: {'#e8e8e8'};
+}}
+
+section[data-testid="stSidebar"] {{
+    background-color: {'#161616'};
+    border-right: 1px solid {'#2a2a2a'};
+}}
+
+.metric-card {{
+    background: {'#1a1a1a'};
+    border: 1px solid {DARKER};
+    border-left: 3px solid {ACCENT};
+    padding: 1rem 1.2rem;
+    margin-bottom: 0.5rem;
+}}
+
+.metric-label {{
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.7rem;
+    color: #666;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-bottom: 0.3rem;
+}}
+
+.metric-value {{
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 1.4rem;
+    font-weight: 600;
+    color: #e8e8e8;
+}}
+
+.metric-value.positive {{ color: {ACCENT}; }}
+.metric-value.negative {{ color: {ACCENT2}; }}
+
+.section-header {{
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.75rem;
+    color: {DARK};
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    border-bottom: 1px solid {DARKER};
+    padding-bottom: 0.5rem;
+    margin: 2rem 0 1rem 0;
+}}
+
+.stTabs [data-baseweb="tab"] {{
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.8rem;
+    letter-spacing: 0.05em;
+}}
+
+div[data-testid="stMetric"] {{
+    background: {PLOT_BG};
+    border: 1px solid {DARKER};
+    padding: 1rem;
+}}
+
+.stDataFrame {{
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.8rem;
+}}
+
+</style>
+""", unsafe_allow_html=True)
 
 # ── Global dollar formatter ───────────────────────────────────────────────────
 import matplotlib.ticker as mticker
@@ -795,24 +826,44 @@ if tab_bench:
 
     # Scatter
     st.markdown('<div class="section-header">Excess Returns Scatter</div>', unsafe_allow_html=True)
-    fig, ax = plt.subplots(figsize=(6, 5))
+    legendalpha=0.6
+    regressionalpha=0.4
+    linealpha=0.5
+    dotalpha=0.5
+    linecolor='#505050'
+    sc_size = 7
+    sc_pos  = "Left"
+    fig, ax = plt.subplots(figsize=(sc_size, sc_size))
     ax.scatter(b_ret.values * 100, p_ret.values * 100,
-               color=ACCENT, alpha=0.3, s=4, linewidths=0)
+               color=ACCENT, alpha=dotalpha, s=4, linewidths=0)
     xlim = max(abs(b_ret.values).max() * 100, 1)
     x_line = np.linspace(-xlim, xlim, 100)
     b_val  = m["Beta"]
     a_val  = m["Alpha (Jensen)"] / 252
-    ax.plot(x_line, b_val * x_line + a_val * 100, color=ACCENT2, linewidth=1.5, label="Regression")
-    ax.axhline(0, color='#444', linewidth=0.5)
-    ax.axvline(0, color='#444', linewidth=0.5)
+    ax.plot(x_line, b_val * x_line + a_val * 100, color=ACCENT2, linewidth=1.5,
+            label=f"Regression (β={b_val:.2f})", alpha=regressionalpha)
+    ax.axhline(0, color=linecolor, linewidth=1, alpha=linealpha)
+    ax.axvline(0, color=linecolor, linewidth=1, alpha=linealpha)
     ax.set_xlabel(f"{benchmark_ticker} Daily Return (%)")
     ax.set_ylabel("Portfolio Daily Return")
     ax.set_title("Portfolio vs Benchmark")
-    ax.legend(fontsize=9)
+    legend_loc = "upper left" if b_val >= 0 else "upper right"
+    leg = ax.legend(fontsize=10, loc=legend_loc, framealpha=legendalpha)
+    for text in leg.get_texts():
+        text.set_alpha(legendalpha)
+    xlim = max(abs(b_ret.values).max() * 100, 1)
+    ax.set_xlim(-xlim, xlim)
+    ax.set_ylim(-xlim, xlim)
     pct_axis(ax, decimals=1)
     ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"{x:.1f}%"))
     apply_style(fig, [ax])
-    st.pyplot(fig)
+    ax.grid(True, color=linecolor, linewidth=0.5, alpha=linealpha)
+    fig.tight_layout()
+    sc_gap = max(1, 12 - sc_size)
+    if   sc_pos == "Left":   _cols = st.columns([sc_size, sc_gap]);              _col = _cols[0]
+    elif sc_pos == "Right":  _cols = st.columns([sc_gap, sc_size]);              _col = _cols[1]
+    else:                     _cols = st.columns([sc_gap//2, sc_size, sc_gap//2]); _col = _cols[1]
+    with _col: st.pyplot(fig, use_container_width=False)
     plt.close()
 
 
@@ -1038,6 +1089,8 @@ if tab_corr:
     @st.fragment
     def render_correlations():
         st.markdown('<div class="section-header">Correlation Matrix</div>', unsafe_allow_html=True)
+        cm_size = max(7, len(tickers))  # ← kaavion koko (tuumaa, neliö)
+        cm_pos  = "Left"              # ← sijainti: "Left" / "Center" / "Right"
 
         custom_cmap = LinearSegmentedColormap.from_list(
             "coolwarm_white",
@@ -1056,35 +1109,47 @@ if tab_corr:
         for i, ticker in enumerate(corr_mat.index):
             annot.iloc[i, i] = f"{ticker}\n1.00"
 
-        fig, ax = plt.subplots(figsize=(max(5, len(tickers)), max(4, len(tickers) - 1)))
+        fig, ax = plt.subplots(figsize=(cm_size + 1.3, cm_size))
         sns.heatmap(corr_mat, annot=annot, fmt="", cmap=custom_cmap,
                     vmin=-1, vmax=1, linewidths=0.5, linecolor='#0f0f0f',
-                    annot_kws={'size': 10}, ax=ax,
+                    annot_kws={'size': 13}, ax=ax,
                     cbar_kws={'label': 'Correlation'})
         ax.set_title("Monthly Return Correlation")
+        ax.set_aspect('equal')
+        ax.set_xlabel("")
+        ax.set_ylabel("")
         apply_style(fig, [ax])
-        st.pyplot(fig)
+        fig.tight_layout()
+        cm_gap = max(1, 12 - cm_size)
+        if   cm_pos == "Left":   _cols = st.columns([cm_size, cm_gap]);               _col = _cols[0]
+        elif cm_pos == "Right":  _cols = st.columns([cm_gap, cm_size]);               _col = _cols[1]
+        else:                     _cols = st.columns([cm_gap//2, cm_size, cm_gap//2]); _col = _cols[1]
+        with _col: st.pyplot(fig, use_container_width=False)
         plt.close()
 
         if len(tickers) >= 2:
             st.markdown('<div class="section-header">36-Month Rolling Correlation</div>', unsafe_allow_html=True)
-            window_size = st.slider("Rolling window (months)", 6, 60, 36)
-            fig, ax = plt.subplots(figsize=(12, 4))
-            color_cycle = [ACCENT, ACCENT3, ACCENT4, ACCENT2, '#b19cd9']
-            for i, (t1, t2) in enumerate(combinations(available, 2)):
-                rc = monthly_r[t1].rolling(window_size).corr(monthly_r[t2])
-                ax.plot(rc, label=f"{t1} vs {t2}",
-                        linewidth=2, color=color_cycle[i % len(color_cycle)])
-            ax.axhline(0,  color='#555', linewidth=0.5)
-            ax.axhline(1,  color='#333', linewidth=0.5, linestyle='--')
-            ax.axhline(-1, color='#333', linewidth=0.5, linestyle='--')
-            ax.set_ylim(-1.05, 1.05)
-            ax.set_ylabel("Correlation")
-            ax.set_title(f"{window_size}-Month Rolling Correlation")
-            ax.legend(fontsize=9, loc='lower left')
-            apply_style(fig, [ax])
-            st.pyplot(fig)
-            plt.close()
+            default_window = min(36, len(monthly_r) - 1)
+            window_size = st.slider("Rolling window (months)", 6, 60, max(6, default_window))
+            if len(monthly_r) < window_size:
+                st.warning(f"Dataa on vain {len(monthly_r)} kuukautta — tarvitaan vähintään {window_size}. Pienennä ikkunaa sliderilla.")
+            else:
+                fig, ax = plt.subplots(figsize=(12, 4))
+                color_cycle = [ACCENT, ACCENT3, ACCENT4, ACCENT2, '#b19cd9']
+                for i, (t1, t2) in enumerate(combinations(available, 2)):
+                    rc = monthly_r[t1].rolling(window_size).corr(monthly_r[t2])
+                    ax.plot(rc, label=f"{t1} vs {t2}",
+                            linewidth=2, color=color_cycle[i % len(color_cycle)])
+                ax.axhline(0,  color='#555', linewidth=0.5)
+                ax.axhline(1,  color='#333', linewidth=0.5, linestyle='--')
+                ax.axhline(-1, color='#333', linewidth=0.5, linestyle='--')
+                ax.set_ylim(-1.05, 1.05)
+                ax.set_ylabel("Correlation")
+                ax.set_title(f"{window_size}-Month Rolling Correlation")
+                ax.legend(fontsize=9, loc='lower left')
+                apply_style(fig, [ax])
+                st.pyplot(fig)
+                plt.close()
 
     render_correlations()
 
@@ -1249,7 +1314,7 @@ if tab_fi:
             # FI required NW target line (only if SWR set)
             if has_swr:
                 target = spend_k / safe_withdrawal_rate
-                legend_label = f"{label} FI target: {fmt_dollars(target)}"
+                legend_label = f"{label} target: {fmt_dollars(target)}"
                 if target <= y_top:
                     # Target is within chart range — draw horizontal line
                     ax.axhline(target, color=color, linewidth=0.8, linestyle=':',
@@ -1264,7 +1329,7 @@ if tab_fi:
                 else:
                     # Target above chart — invisible proxy so it still appears in legend
                     ax.plot([], [], color=color, linewidth=0.8, linestyle=':',
-                            alpha=0.5, label=legend_label + " ↑ (above chart)")
+                            alpha=0.5, label=legend_label)
 
         ax.axhline(0, color='white', linewidth=0.6, alpha=0.3)
         ax.yaxis.set_major_formatter(mticker.FuncFormatter(_yaxis_fmt))
