@@ -1064,18 +1064,21 @@ if tab_fi:
         st.markdown('<div class="section-header">Withdrawal Phase Settings</div>', unsafe_allow_html=True)
         w_col1, w_col2 = st.columns([2, 1])
         with w_col1:
-            withdrawal_start_year = st.slider(
+            _wy_options = ["Accumulation only"] + [str(v) for v in range(0, 101)]
+            _wy_sel = st.select_slider(
                 "Start withdrawals after (years from today)",
-                min_value=0, max_value=50, value=20, step=1,
-                help="Set to 0 to disable withdrawals entirely (pure accumulation). Otherwise, contributions stop and spending begins from this year onward."
+                options=_wy_options,
+                value="20",
+                help="Select 'Accumulation only' to disable withdrawals entirely (pure accumulation). Otherwise, contributions stop and spending begins from this year onward."
             )
+            withdrawal_start_year = 0 if _wy_sel == "Accumulation only" else int(_wy_sel)
         with w_col2:
             total_horizon_years = st.slider(
                 "Total forecast horizon (years)",
-                min_value=max(withdrawal_start_year + 1, 1), max_value=80, value=max(40, withdrawal_start_year + 20), step=1
+                min_value=max(withdrawal_start_year + 1, 1), max_value=100, value=max(40, withdrawal_start_year + 20), step=1
             )
 
-        no_withdrawals = withdrawal_start_year == 0
+        no_withdrawals = _wy_sel == "Accumulation only"
 
         hist_return  = ann_return(p_ret)
         use_return   = custom_annualized_return if custom_annualized_return > 0 else hist_return
@@ -1205,10 +1208,10 @@ if tab_fi:
         ylims = ax.get_ylim()
         if not no_withdrawals:
             ax.text(acc_end_date, ylims[1] * 0.97,
-                    "  accumulation →", fontsize=8, color="#4caf50",
+                    "← accumulation ", fontsize=8, color="#4caf50",
                     alpha=0.9, va='top', ha='right')
             ax.text(acc_end_date, ylims[1] * 0.97,
-                    "← withdrawal  ", fontsize=8, color="#ef5350",
+                    " withdrawal →", fontsize=8, color="#ef5350",
                     alpha=0.9, va='top', ha='left')
         st.pyplot(fig)
         plt.close()
