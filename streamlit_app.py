@@ -9,6 +9,7 @@ import quantstats as qs
 from datetime import datetime, timedelta, date
 from itertools import combinations
 from collections import defaultdict
+from matplotlib.colors import LinearSegmentedColormap
 import warnings
 import io
 import os
@@ -983,15 +984,35 @@ if tab_alloc:
 # TAB 6 – CORRELATIONS
 # ══════════════════════════════════════════════════════════════════════════════
 if tab_corr:
+
+    coolwarm_colors = plt.cm.coolwarm(np.linspace(0, 1, 256))
+    white = np.array([[1, 1, 1, 1]])  # RGBA valkoinen
+    extended_colors = np.vstack([coolwarm_colors, white])
+    custom_cmap = LinearSegmentedColormap.from_list("coolwarm_white", extended_colors)
+
     @st.fragment
     def render_correlations():
         st.markdown('<div class="section-header">Correlation Matrix</div>', unsafe_allow_html=True)
 
+        custom_cmap = LinearSegmentedColormap.from_list(
+            "coolwarm_white",
+            [
+                (0.0,   "#3b4cc0"),      # -1    sininen
+                (0.5,   "#f7f7f7"),      #  0    neutraali
+                (0.9999999, "#b40426"),  #  0.99 punainen
+                (1.0,   "#333333"),      #  1    harmaa
+            ]
+        )
+
         monthly_r = (1 + returns).resample('ME').prod() - 1
         corr_mat  = round(monthly_r.corr(), 2)
 
+        annot = corr_mat.copy().astype(object)
+        for i, ticker in enumerate(corr_mat.index):
+            annot.iloc[i, i] = f"{ticker}\n1.00"
+
         fig, ax = plt.subplots(figsize=(max(5, len(tickers)), max(4, len(tickers) - 1)))
-        sns.heatmap(corr_mat, annot=True, fmt=".2f", cmap='coolwarm',
+        sns.heatmap(corr_mat, annot=annot, fmt="", cmap=custom_cmap,
                     vmin=-1, vmax=1, linewidths=0.5, linecolor='#0f0f0f',
                     annot_kws={'size': 10}, ax=ax,
                     cbar_kws={'label': 'Correlation'})
@@ -1033,11 +1054,11 @@ if tab_fi:
         # ── Spend targets ───────────────────────────────────────────────────
         col1, col2, col3 = st.columns(3)
         with col1:
-            lean_fi = st.number_input("Lean FI annual spend ($k)",  10, 500, 50)
+            lean_fi = st.number_input("Lean FI annual spend ($k)",  10, 500, 36)
         with col2:
-            safe_fi = st.number_input("Safe FI annual spend ($k)",  10, 500, 100)
+            safe_fi = st.number_input("Safe FI annual spend ($k)",  10, 500, 50)
         with col3:
-            cozy_fi = st.number_input("Cozy FI annual spend ($k)",  10, 500, 175)
+            cozy_fi = st.number_input("Cozy FI annual spend ($k)",  10, 500, 100)
 
         # ── Withdrawal start slider ─────────────────────────────────────────
         st.markdown('<div class="section-header">Withdrawal Phase Settings</div>', unsafe_allow_html=True)
