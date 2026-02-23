@@ -630,6 +630,15 @@ tab_report   = _active_tab == 7
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 1 – OVERVIEW
 # ══════════════════════════════════════════════════════════════════════════════
+
+col1, col2, col3, col4 = st.columns(4)
+current_portfolio_value_native = (1 + p_ret).cumprod().iloc[-1] * initial_investment_native
+current_portfolio_value_disp   = current_portfolio_value_native * fx_native_to_display
+initial_investment_disp        = initial_investment if purchase_currency == display_currency \
+                                    else initial_investment * fx_purchase_to_native * fx_native_to_display
+total_gain_disp = current_portfolio_value_disp - initial_investment_disp
+current_portfolio_value = current_portfolio_value_native  # alias for rest of file
+
 if tab_overview:
     def metric_html(label, value, fmt=".2%", positive_good=True):
         if isinstance(value, float) and not np.isnan(value):
@@ -651,13 +660,6 @@ if tab_overview:
             <div class="metric-value {cls}">{display}</div>
         </div>"""
 
-    col1, col2, col3, col4 = st.columns(4)
-    current_portfolio_value_native = (1 + p_ret).cumprod().iloc[-1] * initial_investment_native
-    current_portfolio_value_disp   = current_portfolio_value_native * fx_native_to_display
-    initial_investment_disp        = initial_investment if purchase_currency == display_currency \
-                                     else initial_investment * fx_purchase_to_native * fx_native_to_display
-    total_gain_disp = current_portfolio_value_disp - initial_investment_disp
-    current_portfolio_value = current_portfolio_value_native  # alias for rest of file
     with col1:
         st.markdown(metric_html("Annual Return",     m["Annual Return"]),     unsafe_allow_html=True)
         st.markdown(metric_html("Annual Volatility", m["Annual Volatility"]), unsafe_allow_html=True)
@@ -671,7 +673,7 @@ if tab_overview:
         st.markdown(metric_html("VaR 95%",  m["VaR 95%"],  positive_good=False), unsafe_allow_html=True)
         st.markdown(metric_html("CVaR 95%", m["CVaR 95%"], positive_good=False), unsafe_allow_html=True)
 
-    st.markdown('<div class="section-header">Portfolio Value</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-header">Portfolio Value - Rough Estimate</div>', unsafe_allow_html=True)
     _tc_str = ", ".join(f"{t} - {c}" for t,c in ticker_currencies.items() if t in available)
     _fx_note = ""
     if purchase_currency != portfolio_native_currency:
@@ -926,7 +928,7 @@ if tab_bench:
             f"{m['Bench Volatility']:.2%}",
             f"{m['Bench Sharpe']:.3f}",
             f"{m['Bench Max Drawdown']:.2%}",
-            "1.000", "0.00%", "0.00%", "—", "100.0%", "100.0%", "1.000",
+            "1.000", "0.00%", "0.00%", "———", "100.0%", "100.0%", "1.000",
         ],
     })
     st.dataframe(bench_metrics, use_container_width=True, hide_index=True)
@@ -937,8 +939,11 @@ if tab_bench:
     cum_b = (1 + b_ret).cumprod() * initial_investment_native
     ax.plot(cum_p.index, cum_p.values, color=ACCENT,  linewidth=2,   label="Portfolio")
     ax.plot(cum_b.index, cum_b.values, color=ACCENT3, linewidth=1.5, label=benchmark_ticker, alpha=0.8)
+    ax.set_xlim(left=cum_p.index.min(), 
+                right=cum_p.index.max() + (cum_p.index.max() - cum_p.index.min()) * 0.01)
     ax.set_ylabel("Value")
     ax.set_title("Cumulative Growth Comparison")
+
     ax.legend(fontsize=9)
     dollar_axis(ax)
     apply_style(fig, [ax])
@@ -1201,7 +1206,7 @@ if tab_alloc:
     holdings_df = pd.DataFrame({
         "Ticker":       tickers,
         "Weight":       [f"{w:.2%}" for w in weights_raw],
-        "Asset Class":  [asset_classes.get(t, "—") for t in tickers],
+        "Asset Class":  [asset_classes.get(t, "———") for t in tickers],
     })
     st.dataframe(holdings_df, use_container_width=True, hide_index=True)
 
@@ -1275,25 +1280,48 @@ if tab_corr:
         plt.close()
 
         if len(tickers) >= 2:
-            st.markdown('<div class="section-header">36-Month Rolling Correlation</div>', unsafe_allow_html=True)
+            st.markdown('<div class="section-header">Rolling Correlation</div>', unsafe_allow_html=True)
             default_window = min(36, len(monthly_r) - 1)
             window_size = st.slider("Rolling window (months)", 6, 60, max(6, default_window))
-            if len(monthly_r) < window_size:
-                st.warning(f"Only {len(monthly_r)} months of data available — need at least {window_size}. Reduce the window size with the slider.")
+            
+            if len(monthly_r) - 1 < window_size:
+                st.warning(f"Only {len(monthly_r) - 1} months of data available.")
             else:
                 fig, ax = plt.subplots(figsize=(12, 4))
                 color_cycle = [ACCENT, ACCENT3, ACCENT4, ACCENT2, '#b19cd9']
+                
+                # Alustetaan muuttuja, jolla seurataan datan alkupistettä (ilman NaN-arvoja)
+                first_valid_date = None
+
                 for i, (t1, t2) in enumerate(combinations(available, 2)):
                     rc = monthly_r[t1].rolling(window_size).corr(monthly_r[t2])
+                    
+                    # Päivitetään ensimmäinen validi päivämäärä
+                    if first_valid_date is None:
+                        first_valid_date = rc.dropna().index.min()
+                    
                     ax.plot(rc, label=f"{t1} vs {t2}",
                             linewidth=2, color=color_cycle[i % len(color_cycle)])
+                
+                # MARGINAALIEN KORJAUS:
+                # Vasen reuna ensimmäiseen laskettuun korrelaatioon, oikealle 2 %
+                if first_valid_date:
+                    date_max = monthly_r.index.max()
+                    date_range = date_max - first_valid_date
+                    ax.set_xlim(left=first_valid_date, 
+                                right=date_max)
+
                 ax.axhline(0,  color='#555', linewidth=0.5)
                 ax.axhline(1,  color='#333', linewidth=0.5, linestyle='--')
                 ax.axhline(-1, color='#333', linewidth=0.5, linestyle='--')
                 ax.set_ylim(-1.05, 1.05)
                 ax.set_ylabel("Correlation")
                 ax.set_title(f"{window_size}-Month Rolling Correlation")
-                ax.legend(fontsize=9, loc='lower left')
+                leg = ax.legend(fontsize=6, loc='upper left', framealpha=0.3)
+                for text in leg.get_texts():
+                    text.set_alpha(0.5)
+                for line in leg.get_lines():
+                    line.set_alpha(0.5)
                 apply_style(fig, [ax])
                 st.pyplot(fig)
                 plt.close()
@@ -1306,7 +1334,7 @@ if tab_corr:
 if tab_fi:
     @st.fragment
     def render_fi():
-        st.markdown('<div class="section-header">Financial Independence Forecast</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-header">Financial Independence Forecast Settings</div>', unsafe_allow_html=True)
 
         # ── Spend targets ───────────────────────────────────────────────────
         col1, col2, col3 = st.columns(3)
@@ -1318,7 +1346,7 @@ if tab_fi:
             cozy_fi = st.number_input("Cozy FI annual spend ($k)",  10, 500, 100)
 
         # ── Withdrawal start slider ─────────────────────────────────────────
-        st.markdown('<div class="section-header">Withdrawal Phase Settings</div>', unsafe_allow_html=True)
+        
         w_col1, w_col2 = st.columns([2, 1])
         with w_col1:
             _wy_options = ["Accumulation only"] + [str(v) for v in range(0, 101)]
@@ -1334,7 +1362,7 @@ if tab_fi:
                 "Total forecast horizon (years)",
                 min_value=max(withdrawal_start_year + 1, 1), max_value=80, value=max(40, withdrawal_start_year + 20), step=1
             )
-
+        st.markdown('<div class="section-header"></div>', unsafe_allow_html=True)
         no_withdrawals = _wy_sel == "Accumulation only"
 
         hist_return  = ann_return(p_ret)
@@ -1344,14 +1372,14 @@ if tab_fi:
 
         if no_withdrawals:
             st.caption(
-                f"**Accumulation only** — contributing ${monthly_investment}/month for {total_horizon_years} years, "
+                f"**Accumulation only** - contributing ${monthly_investment}/month for {total_horizon_years} years, "
                 f"growing at {return_label}/yr. No withdrawals."
             )
         else:
             st.caption(
-                f"**Accumulation:** years 0–{withdrawal_start_year} — contributing ${monthly_investment}/month, "
+                f"**Accumulation:** years 0–{withdrawal_start_year} - contributing ${monthly_investment}/month, "
                 f"growing at {return_label}/yr   |   "
-                f"**Withdrawal:** years {withdrawal_start_year}–{total_horizon_years} — contributions stop, spending begins"
+                f"**Withdrawal:** years {withdrawal_start_year}–{total_horizon_years} - contributions stop, spending begins"
             )
 
         total_months         = total_horizon_years * 12
@@ -1482,10 +1510,10 @@ if tab_fi:
         ax.yaxis.set_major_formatter(mticker.FuncFormatter(_yaxis_fmt))
         ax.set_ylabel("Net Worth")
         ax.set_title(
-            f"FI Forecast — {return_label} return  |  "
+            f"FI Forecast - {return_label} return  |  "
             f"${monthly_investment}/mo contribution until yr {withdrawal_start_year}  |  "
             f"SWR {safe_withdrawal_rate:.1%}" if has_swr else
-            f"FI Forecast — {return_label} return  |  "
+            f"FI Forecast - {return_label} return  |  "
             f"${monthly_investment}/mo contribution until yr {withdrawal_start_year}"
         )
         ax.legend(fontsize=9, loc='upper left')
@@ -1500,6 +1528,7 @@ if tab_fi:
             ax.text(acc_end_date, ylims[1] * 0.97,
                     " withdrawal →", fontsize=8, color="#ef5350",
                     alpha=0.9, va='top', ha='left')
+        ax.margins(x=0)
         st.pyplot(fig)
         plt.close()
 
@@ -1524,8 +1553,8 @@ if tab_fi:
                 fi_target   = fmt_dollars(target)
                 yrs_str     = f"{yrs_to_fi:.1f}" if yrs_to_fi else f">{withdrawal_start_year}"
             else:
-                fi_target = "—"
-                yrs_str   = "—"
+                fi_target = "-"
+                yrs_str   = "-"
 
             # Portfolio longevity after withdrawal start
             withdrawal_vals = vals[withdrawal_start_mo:]
@@ -1591,19 +1620,21 @@ if tab_fi:
 
         ax.set_ylabel("Net Worth")
         ax.set_title(
-            f"{total_horizon_years}-yr Monte Carlo — {mc_spend} (${mc_spend_k}k/yr spend)  |  "
+            f"{total_horizon_years}-yr Monte Carlo - {mc_spend} (${mc_spend_k}k/yr spend)  |  "
             f"Withdrawals start yr {withdrawal_start_year}  |  "
             f"Portfolio survives in {surviving:.0f}% of scenarios"
         )
         ax.legend(fontsize=9)
         dollar_axis_k = mticker.FuncFormatter(lambda x, _: fmt_dollars(x))
         ax.yaxis.set_major_formatter(dollar_axis_k)
+        
+        ax.margins(x=0.0015)
         apply_style(fig, [ax])
         st.pyplot(fig)
         plt.close()
 
         st.caption(
-            f"At year {total_horizon_years} — "
+            f"At year {total_horizon_years} - "
             f"Median: {fmt_dollars(p50[-1])}  |  "
             f"10th pct: {fmt_dollars(p10[-1])}  |  "
             f"90th pct: {fmt_dollars(p90[-1])}  |  "
@@ -1671,6 +1702,6 @@ if tab_report:
                     "portfolio_report.html",
                     "text/html"
                 )
-                st.success("Report ready — click above to download.")
+                st.success("Report ready - click above to download.")
             except Exception as e:
                 st.error(f"Report failed: {e}")
