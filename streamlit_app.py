@@ -1075,7 +1075,7 @@ if tab_fi:
         with w_col2:
             total_horizon_years = st.slider(
                 "Total forecast horizon (years)",
-                min_value=max(withdrawal_start_year + 1, 1), max_value=100, value=max(40, withdrawal_start_year + 20), step=1
+                min_value=max(withdrawal_start_year + 1, 1), max_value=80, value=max(40, withdrawal_start_year + 20), step=1
             )
 
         no_withdrawals = _wy_sel == "Accumulation only"
@@ -1148,8 +1148,22 @@ if tab_fi:
             ax.axvspan(acc_end_date, proj_dates[-1], alpha=0.04, color=ACCENT2, zorder=0)
             ax.axvline(acc_end_date, color="white", linewidth=1.2, linestyle=':', alpha=0.6)
 
+        # Pre-simulate all scenarios to determine Y axis range from data only
+        all_sim_data = {}
         for spend_k, label, color in scenarios:
-            vals = simulate(spend_k)
+            all_sim_data[(spend_k, label, color)] = simulate(spend_k)
+
+        # Set Y axis limits based on simulated data (not target lines)
+        all_vals_flat = [v for vals in all_sim_data.values() for v in vals]
+        y_max_data = max(v for v in all_vals_flat if np.isfinite(v))
+        y_min_data = min(v for v in all_vals_flat if np.isfinite(v))
+        y_margin   = (y_max_data - y_min_data) * 0.08
+        y_top      = y_max_data + y_margin
+        y_bot      = min(y_min_data - y_margin, -y_margin * 0.5)
+        ax.set_ylim(y_bot, y_top)
+
+        for spend_k, label, color in scenarios:
+            vals   = all_sim_data[(spend_k, label, color)]
             series = pd.Series(vals, index=proj_dates)
 
             # Accumulation portion (solid)
@@ -1183,14 +1197,22 @@ if tab_fi:
             # FI required NW target line (only if SWR set)
             if has_swr:
                 target = spend_k / safe_withdrawal_rate
-                ax.axhline(target, color=color, linewidth=0.8, linestyle=':',
-                           alpha=0.5)
-                # Mark first crossing during accumulation
-                acc_series = series.iloc[:withdrawal_start_mo + 1]
-                cross = acc_series[acc_series >= target]
-                if not cross.empty:
-                    ax.scatter([cross.index[0]], [cross.iloc[0]],
-                               color=color, s=60, zorder=5, marker='*', edgecolors='white', linewidth=0.5)
+                legend_label = f"{label} target: ${target:,.0f}k"
+                if target <= y_top:
+                    # Target is within chart range — draw horizontal line
+                    ax.axhline(target, color=color, linewidth=0.8, linestyle=':',
+                               alpha=0.5, label=legend_label)
+                    # Mark first crossing during accumulation
+                    acc_series = series.iloc[:withdrawal_start_mo + 1]
+                    cross = acc_series[acc_series >= target]
+                    if not cross.empty:
+                        ax.scatter([cross.index[0]], [cross.iloc[0]],
+                                   color=color, s=60, zorder=5, marker='*',
+                                   edgecolors='white', linewidth=0.5)
+                else:
+                    # Target above chart — invisible proxy so it still appears in legend
+                    ax.plot([], [], color=color, linewidth=0.8, linestyle=':',
+                            alpha=0.5, label=legend_label)
 
         ax.axhline(0, color='white', linewidth=0.6, alpha=0.3)
         ax.set_ylabel("Net Worth ($k)")
