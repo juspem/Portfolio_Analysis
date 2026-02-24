@@ -16,6 +16,7 @@ import io
 import os
 import tempfile
 import requests
+import gc
 
 warnings.filterwarnings('ignore')
 
@@ -45,16 +46,25 @@ def download_data(tickers, start, end):
         return None
 
 # ── Load user config (overrides my_portfolio.py without touching it) ──────────
-_CONFIG_FILE = os.path.join(os.path.dirname(__file__), "portfolio_config.json")
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
-def _load_config():
-    """Load saved config. Falls back to my_portfolio defaults if not found."""
-    if os.path.exists(_CONFIG_FILE):
-        with open(_CONFIG_FILE, "r", encoding="utf-8") as f:
+def _find_config_file():
+    """Return path of the first .json file found next to the script, or None."""
+    for f in sorted(os.listdir(_SCRIPT_DIR)):
+        if f.endswith(".json"):
+            return os.path.join(_SCRIPT_DIR, f)
+    return None
+
+def _load_config(path=None):
+    """Load config from path (or auto-detected file). Falls back to {} if not found."""
+    target = path or _find_config_file()
+    if target and os.path.exists(target):
+        with open(target, "r", encoding="utf-8") as f:
             return json.load(f)
     return {}
 
-_cfg = _load_config()
+_active_config_file = _find_config_file()
+_cfg = _load_config(_active_config_file)
 
 # Helper: pick from saved config, else fall back to my_portfolio attribute
 def _cv(key, default):
@@ -307,8 +317,8 @@ with st.sidebar:
     )
 
     st.markdown('<div class="section-header">Configuration Management</div>', unsafe_allow_html=True)
-    
-    # Valmistellaan nykyiset asetukset sanakirjana
+
+    # ── Download current settings (above upload) ──────────────────────────────
     current_config = {
         "tickers_input":           tickers_input,
         "weights_input":           weights_input,
@@ -323,21 +333,44 @@ with st.sidebar:
         "purchase_currency":       purchase_currency,
         "display_currency":        display_currency,
     }
-
-    # "Tallenna minne haluat" -ominaisuus (Latauspainike selaimessa)
+    _dl_name = os.path.basename(_active_config_file) if _active_config_file else "portfolio.json"
     config_json_bytes = json.dumps(current_config, indent=2, ensure_ascii=False).encode('utf-8')
     st.download_button(
         label="Download configuration",
         data=config_json_bytes,
-        file_name="portfolio_config.json", # Oletusnimi, selaimessa voit muuttaa
+        file_name=_dl_name,
         mime="application/json",
         use_container_width=True,
     )
 
-    # Alkuperäinen Reset-nappi
-    if os.path.exists(_CONFIG_FILE):
+    # ── Upload any .json config file ──────────────────────────────────────────
+    _uploaded = st.file_uploader(
+        "Load config (.json)",
+        type="json",
+        help="Upload any .json portfolio config file. Saved next to the script and loaded immediately.",
+    )
+    if _uploaded is not None:
+        _upload_id = f"{_uploaded.name}_{_uploaded.size}"
+        if st.session_state.get("_last_upload_id") != _upload_id:
+            _save_path = os.path.join(_SCRIPT_DIR, _uploaded.name)
+            for _old_f in os.listdir(_SCRIPT_DIR):
+                if _old_f.endswith(".json"):
+                    os.remove(os.path.join(_SCRIPT_DIR, _old_f))
+            with open(_save_path, "wb") as _fh:
+                _fh.write(_uploaded.getbuffer())
+            st.session_state["_last_upload_id"] = _upload_id
+            st.rerun()
+
+    # Show which file is active
+    if _active_config_file:
+        st.caption(f"Active config: `{os.path.basename(_active_config_file)}`")
+    else:
+        st.caption("No config file — using defaults from my_portfolio.py")
+
+    # ── Reset: delete the active config file ──────────────────────────────────
+    if _active_config_file and os.path.exists(_active_config_file):
         if st.button("Reset to defaults", use_container_width=True):
-            os.remove(_CONFIG_FILE)
+            os.remove(_active_config_file)
             st.rerun()
 
 
@@ -565,7 +598,7 @@ m = {
 
 
 # ── Tabs ──────────────────────────────────────────────────────────────────────
-_TAB_NAMES = ["Overview", "Performance", "Risk", "Benchmark", "Allocation",
+_TAB_NAMES = ["Overview", "Performance", "Risk", "Benchmark", "Distribution",
               "Correlations", "FI Forecast", "Optimization", "Report"]
 (tab_overview, tab_perf, tab_risk, tab_bench, tab_alloc,
  tab_corr, tab_fi, tab_opt, tab_report) = st.tabs(_TAB_NAMES)
@@ -670,6 +703,8 @@ with tab_overview:
         st.pyplot(fig)
         plt.close()
 
+gc.collect()
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 2 – PERFORMANCE
@@ -755,6 +790,7 @@ with tab_perf:
         st.pyplot(fig)
         plt.close()
 
+gc.collect()
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 3 – RISK
@@ -1059,17 +1095,423 @@ def draw_pie(ax, sizes, labels, colors, title, filter_zero=False):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# TAB 5 – ALLOCATION
+# TAB 5 – DISTRIBUTION  (helpers defined at module level so cache works)
 # ══════════════════════════════════════════════════════════════════════════════
+
+# ── Country name → ISO-3166-1 alpha-3 lookup ─────────────────────────────────
+_COUNTRY_ISO3 = {
+    "United States":"USA","Japan":"JPN","United Kingdom":"GBR","France":"FRA",
+    "Canada":"CAN","Switzerland":"CHE","Germany":"DEU","Australia":"AUS",
+    "Netherlands":"NLD","Denmark":"DNK","Sweden":"SWE","Hong Kong":"HKG",
+    "Spain":"ESP","Italy":"ITA","Singapore":"SGP","Finland":"FIN","Belgium":"BEL",
+    "Norway":"NOR","Israel":"ISR","New Zealand":"NZL","Portugal":"PRT",
+    "Ireland":"IRL","Austria":"AUT","Taiwan":"TWN","South Korea":"KOR",
+    "China":"CHN","India":"IND","Brazil":"BRA","Mexico":"MEX","South Africa":"ZAF",
+    "Poland":"POL","Czech Republic":"CZE","Hungary":"HUN","Greece":"GRC",
+    "Malaysia":"MYS","Thailand":"THA","Indonesia":"IDN","Philippines":"PHL",
+    "Saudi Arabia":"SAU","UAE":"ARE","Qatar":"QAT","Kuwait":"KWT","Egypt":"EGY",
+    "Turkey":"TUR","Russia":"RUS","Chile":"CHL","Colombia":"COL","Peru":"PER",
+    "Argentina":"ARG","Luxembourg":"LUX","Cayman Islands":"CYM","Bermuda":"BMU",
+}
+
+# ── Sector colour palette ─────────────────────────────────────────────────────
+SECTOR_COLORS = {
+    "Information Technology": "#2e80b8", "Technology": "#2e80b8",
+    "Health Care": "#29b864",            "Healthcare": "#29b864",
+    "Financials": "#f39c12",             "Financial Services": "#f39c12",
+    "Consumer Discretionary": "#e67e22",
+    "Consumer Staples": "#d4a017",
+    "Energy": "#95a5a6",
+    "Industrials": "#6bc5ff",
+    "Materials": "#fd79a8",
+    "Real Estate": "#ffa94d",            "Realestate": "#ffa94d",
+    "Communication Services": "#b19cd9", "Communication": "#b19cd9",
+    "Utilities": "#f1c40f",
+    "Other": "#444444",
+}
+
+# ── Known ETF country weights (normalised to sum≈1) ──────────────────────────
+# Keys: uppercase base ticker without exchange suffix
+_KNOWN_ETF_COUNTRIES = {
+    # MSCI World trackers (IWDA, SWDA, VWCE, EUNL, FLX5, LCWD …)
+    "MSCI_WORLD": {
+        "United States":0.705,"Japan":0.058,"United Kingdom":0.038,"France":0.032,
+        "Canada":0.030,"Switzerland":0.026,"Germany":0.023,"Australia":0.019,
+        "Netherlands":0.014,"Denmark":0.009,"Sweden":0.008,"Hong Kong":0.008,
+        "Spain":0.007,"Italy":0.006,"Singapore":0.004,"Finland":0.003,
+        "Belgium":0.003,"Norway":0.002,"Israel":0.004,"New Zealand":0.002,
+    },
+    # MSCI World Infrastructure
+    "MSCI_INFRA": {
+        "United States":0.40,"Canada":0.10,"Australia":0.08,"United Kingdom":0.08,
+        "France":0.07,"Italy":0.06,"Spain":0.05,"Japan":0.04,"Hong Kong":0.03,
+        "Germany":0.02,"China":0.02,"Netherlands":0.02,"Other":0.03,
+    },
+    # S&P 500
+    "SP500": {
+        "United States":1.00,
+    },
+    # MSCI Emerging Markets
+    "MSCI_EM": {
+        "China":0.27,"India":0.18,"Taiwan":0.18,"South Korea":0.12,
+        "Brazil":0.05,"Saudi Arabia":0.04,"South Africa":0.03,"Mexico":0.02,
+        "Malaysia":0.02,"Thailand":0.02,"Indonesia":0.02,"Other":0.05,
+    },
+    # MSCI ACWI
+    "MSCI_ACWI": {
+        "United States":0.635,"Japan":0.052,"United Kingdom":0.034,"France":0.029,
+        "Canada":0.027,"China":0.026,"Switzerland":0.023,"Germany":0.021,
+        "Australia":0.017,"Taiwan":0.017,"India":0.016,"South Korea":0.013,
+        "Netherlands":0.013,"Sweden":0.007,"Denmark":0.008,"Hong Kong":0.007,
+        "Spain":0.006,"Italy":0.005,"Singapore":0.004,"Brazil":0.004,
+    },
+    # Europe trackers
+    "EUROPE": {
+        "United Kingdom":0.22,"France":0.18,"Germany":0.15,"Switzerland":0.13,
+        "Netherlands":0.07,"Sweden":0.06,"Denmark":0.05,"Spain":0.04,
+        "Italy":0.04,"Belgium":0.02,"Finland":0.02,"Norway":0.01,"Other":0.01,
+    },
+    # Global Real Estate / REIT
+    "GLOBAL_REIT": {
+        "United States":0.63,"Japan":0.11,"Australia":0.07,"United Kingdom":0.05,
+        "Singapore":0.04,"Canada":0.03,"France":0.03,"Germany":0.02,"Other":0.02,
+    },
+    # Nordics
+    "NORDIC": {
+        "Sweden":0.42,"Denmark":0.28,"Finland":0.16,"Norway":0.14,
+    },
+    # US Bond / Treasury — domiciled USA
+    "US_BOND": {"United States":1.00},
+    # Euro Bond
+    "EUR_BOND": {
+        "France":0.22,"Germany":0.18,"Italy":0.16,"Spain":0.12,"Netherlands":0.09,
+        "Belgium":0.06,"Austria":0.04,"Portugal":0.03,"Finland":0.03,"Other":0.07,
+    },
+    # Global Bond
+    "GLOBAL_BOND": {
+        "United States":0.40,"Japan":0.10,"France":0.07,"Germany":0.07,
+        "United Kingdom":0.06,"Italy":0.05,"Canada":0.04,"China":0.04,"Other":0.17,
+    },
+    # Commodities — by country of exchange/production
+    "COMMODITY": {
+        "United States":0.55,"United Kingdom":0.15,"Germany":0.10,"Other":0.20,
+    },
+}
+
+# ── Known ETF sector weights ──────────────────────────────────────────────────
+_KNOWN_ETF_SECTORS = {
+    "MSCI_WORLD": {
+        "Information Technology":0.24,"Financials":0.16,"Health Care":0.12,
+        "Industrials":0.10,"Consumer Discretionary":0.10,
+        "Communication Services":0.08,"Consumer Staples":0.07,
+        "Energy":0.05,"Materials":0.04,"Real Estate":0.02,"Utilities":0.02,
+    },
+    "MSCI_INFRA": {
+        "Utilities":0.35,"Industrials":0.30,"Energy":0.15,
+        "Real Estate":0.10,"Communication Services":0.08,"Financials":0.02,
+    },
+    "SP500": {
+        "Information Technology":0.29,"Financials":0.13,"Health Care":0.13,
+        "Consumer Discretionary":0.10,"Industrials":0.09,
+        "Communication Services":0.09,"Consumer Staples":0.06,
+        "Energy":0.04,"Materials":0.02,"Real Estate":0.02,"Utilities":0.02,
+    },
+    "MSCI_EM": {
+        "Information Technology":0.22,"Financials":0.22,"Consumer Discretionary":0.13,
+        "Communication Services":0.10,"Materials":0.09,"Energy":0.07,
+        "Industrials":0.06,"Consumer Staples":0.05,"Health Care":0.04,"Utilities":0.02,
+    },
+    "MSCI_ACWI": {
+        "Information Technology":0.24,"Financials":0.16,"Health Care":0.11,
+        "Industrials":0.10,"Consumer Discretionary":0.10,
+        "Communication Services":0.08,"Consumer Staples":0.07,
+        "Energy":0.05,"Materials":0.04,"Real Estate":0.02,"Utilities":0.02,
+    },
+    "EUROPE": {
+        "Financials":0.18,"Industrials":0.16,"Health Care":0.15,
+        "Consumer Staples":0.12,"Consumer Discretionary":0.10,
+        "Materials":0.08,"Energy":0.07,"Information Technology":0.07,
+        "Utilities":0.04,"Communication Services":0.03,
+    },
+    "GLOBAL_REIT": {
+        "Real Estate":1.00,
+    },
+    "NORDIC": {
+        "Industrials":0.22,"Financials":0.18,"Health Care":0.14,
+        "Information Technology":0.13,"Consumer Staples":0.09,
+        "Materials":0.08,"Communication Services":0.07,"Energy":0.05,
+        "Consumer Discretionary":0.04,
+    },
+    "US_BOND":     {"Financials":0.30,"Government":0.70},
+    "EUR_BOND":    {"Financials":0.25,"Government":0.75},
+    "GLOBAL_BOND": {"Financials":0.20,"Government":0.80},
+    "COMMODITY":   {"Energy":0.35,"Materials":0.40,"Consumer Staples":0.15,"Other":0.10},
+}
+
+# ── Ticker → ETF template mapping (add more as needed) ───────────────────────
+_TICKER_TO_TEMPLATE = {
+    # iShares MSCI World (multiple exchange listings)
+    "IWDA": "MSCI_WORLD", "IWDA.L": "MSCI_WORLD", "IWDA.AS": "MSCI_WORLD",
+    "SWDA": "MSCI_WORLD", "SWDA.L": "MSCI_WORLD",
+    "EUNL": "MSCI_WORLD", "EUNL.DE": "MSCI_WORLD",
+    "LCWD": "MSCI_WORLD", "LCWD.L": "MSCI_WORLD",
+    "VWCE": "MSCI_ACWI",  "VWCE.DE": "MSCI_ACWI",  "VWCE.L": "MSCI_ACWI",
+    # FLX5 = iShares Core MSCI World UCITS ETF (EUR Hedged) ≈ MSCI World
+    "FLX5": "MSCI_WORLD", "FLX5.DE": "MSCI_WORLD",
+    # FLXI = iShares MSCI World Infrastructure UCITS ETF
+    "FLXI": "MSCI_INFRA", "FLXI.DE": "MSCI_INFRA",
+    # S&P 500
+    "SPY": "SP500", "VOO": "SP500", "IVV": "SP500", "CSPX": "SP500",
+    "CSPX.L": "SP500", "SXR8": "SP500", "SXR8.DE": "SP500",
+    "IUSA": "SP500", "IUSA.L": "SP500",
+    # ACWI
+    "ACWI": "MSCI_ACWI", "ISAC": "MSCI_ACWI", "ISAC.L": "MSCI_ACWI",
+    # Emerging Markets
+    "EEM": "MSCI_EM", "VWO": "MSCI_EM", "EIMI": "MSCI_EM", "EIMI.L": "MSCI_EM",
+    "IEEM": "MSCI_EM", "IEEM.L": "MSCI_EM",
+    # Europe
+    "VGK": "EUROPE", "IEUR": "EUROPE", "EZU": "EUROPE",
+    "IMEU": "EUROPE", "IMEU.L": "EUROPE",
+    "MEUD": "EUROPE", "MEUD.L": "EUROPE",
+    # Nordics
+    "NORDEN": "NORDIC",
+    # Global REIT
+    "REET": "GLOBAL_REIT", "IWDP": "GLOBAL_REIT", "IWDP.L": "GLOBAL_REIT",
+    # Bonds
+    "AGG": "US_BOND", "BND": "US_BOND", "TLT": "US_BOND",
+    "IEAG": "EUR_BOND", "IEAG.L": "EUR_BOND",
+    "IGLO": "GLOBAL_BOND", "IGLO.L": "GLOBAL_BOND",
+    # Commodities
+    "GLD": "COMMODITY", "IAU": "COMMODITY", "PHAU": "COMMODITY",
+    "PDBC": "COMMODITY", "DJP": "COMMODITY",
+}
+
+# Sector name synonyms — normalise to canonical name before aggregation
+_SECTOR_NORM = {
+    "Financial Services": "Financials",
+    "Technology": "Information Technology",
+    "Healthcare": "Health Care",
+    "Realestate": "Real Estate",
+    "Communication": "Communication Services",
+    "Consumer Cyclical": "Consumer Discretionary",
+    "Consumer Defensive": "Consumer Staples",
+    "Basic Materials": "Materials",
+}
+
+def _normalise_sectors(d):
+    out = {}
+    for k, v in d.items():
+        canon = _SECTOR_NORM.get(k, k)
+        out[canon] = out.get(canon, 0) + v
+    return out
+
+@st.cache_data(show_spinner=False)
+def _get_etf_data_cached(ticker):
+    """
+    Priority: yfinance sectorWeightings/countryWeightings → yfinance country/sector
+    → hardcoded built-in template.
+    Does NOT check session_state overrides.
+    """
+    try:
+        info    = yf.Ticker(ticker).info
+        country = info.get("country")
+        # sector  = info.get("sector")
+        sector  = None
+        raw_sec = info.get("sectorWeightings") or []
+        raw_cty = info.get("countryWeightings") or []
+        sec_w   = {}
+        for d in raw_sec:
+            for k, v in d.items():
+                sec_w[k.title()] = sec_w.get(k.title(), 0) + float(v)
+        cty_w   = {}
+        for d in raw_cty:
+            for k, v in d.items():
+                cty_w[k.title()] = cty_w.get(k.title(), 0) + float(v)
+        if sec_w or cty_w or country or sector:
+            return cty_w, _normalise_sectors(sec_w), country, sector
+    except Exception:
+        pass
+    # Fallback: built-in template
+    tmpl = _TICKER_TO_TEMPLATE.get(ticker.upper())
+    if tmpl:
+        return (_KNOWN_ETF_COUNTRIES.get(tmpl, {}),
+                _KNOWN_ETF_SECTORS.get(tmpl, {}),
+                None, None)
+    return {}, {}, None, None
+
+def _get_etf_data(ticker):
+    """
+    Returns (country_weights_dict, sector_weights_dict, home_country, home_sector).
+    Priority: ETF Database (user-saved) → yfinance → built-in template.
+    """
+    key = ticker.upper()
+    custom = st.session_state.get("etf_custom_db", {})
+    if key in custom:
+        entry = custom[key]
+        return entry.get("countries", {}), entry.get("sectors", {}), None, None
+    return _get_etf_data_cached(ticker)
+
+def _agg_exposure(tickers_list, weights_list, idx):
+    """Aggregate country (idx=0) or sector (idx=1) weighted exposure."""
+    totals = defaultdict(float)
+    per_ticker = {}
+    for t, w in zip(tickers_list, weights_list):
+        cty_w, sec_w, country, sector = _get_etf_data(t)
+        breakdown = [cty_w, sec_w][idx]
+        fallback  = [country, sector][idx]
+        if breakdown:
+            for k, v in breakdown.items():
+                totals[k] += v * w
+            per_ticker[t] = breakdown
+        elif fallback:
+            totals[fallback] += w
+            per_ticker[t] = {fallback: 1.0}
+        else:
+            per_ticker[t] = {}
+    if not totals:
+        return pd.Series(dtype=float), {}
+    s = pd.Series(totals).sort_values(ascending=False)
+    return s / s.sum(), per_ticker
+
+# ── Plotly chart helpers ──────────────────────────────────────────────────────
+def _plotly_country_bar(series):
+    import plotly.graph_objects as go
+    top = series.head(20)
+    fig = go.Figure(go.Bar(
+        x=top.values * 100,
+        y=top.index,
+        orientation='h',
+        marker_color=ACCENT3,
+        text=[f"{v*100:.1f}%" for v in top.values],
+        textposition='outside',
+    ))
+    fig.update_layout(
+        title="   Country Weight",
+        xaxis=dict(title="Weight", ticksuffix="%"),
+        yaxis=dict(autorange="reversed"),
+        template="plotly_dark",
+        paper_bgcolor=PLOT_BG,
+        plot_bgcolor=PLOT_BG,
+        font=dict(color=PLOT_FG),
+        height=max(350, len(top) * 28 + 80),
+        margin=dict(l=140, r=80, t=50, b=40),
+    )
+    return fig
+
+def _plotly_choropleth(series):
+    import plotly.graph_objects as go
+    iso3   = [_COUNTRY_ISO3.get(c, None) for c in series.index]
+    mask   = [i is not None for i in iso3]
+    vals   = [v * 100 for v, m in zip(series.values, mask) if m]
+    codes  = [c for c, m in zip(iso3, mask) if m]
+    names  = [n for n, m in zip(series.index, mask) if m]
+    fig = go.Figure(go.Choropleth(
+        locations=codes,
+        z=vals,
+        text=names,
+        colorscale=[[0, PLOT_BG], [0.15, "#1a3a5c"], [0.4, "#2e80b8"], [1, ACCENT3]],
+        colorbar=dict(title="Weight %", ticksuffix="%",
+                      bgcolor=PLOT_BG, tickfont=dict(color=PLOT_FG)),
+        hovertemplate="%{text}: %{z:.2f}%<extra></extra>",
+        marker_line_color="#333",
+        marker_line_width=0.5,
+    ))
+    fig.update_layout(
+        geo=dict(
+            showframe=False, showcoastlines=True,
+            coastlinecolor="#333",
+            showland=True,  landcolor="#1a1a1a",
+            showocean=True, oceancolor="#0f0f0f",
+            showcountries=True, countrycolor="#333",
+            bgcolor=PLOT_BG,
+            projection_type="natural earth",
+        ),
+        paper_bgcolor=PLOT_BG,
+        font=dict(color=PLOT_FG),
+        margin=dict(l=0, r=0, t=10, b=10),
+        height=650,
+    )
+    return fig
+
+def _plotly_sector_bar(series, ticker_detail=None):
+    import plotly.graph_objects as go
+    colors = [SECTOR_COLORS.get(s, ACCENT) for s in series.index]
+    fig = go.Figure(go.Bar(
+        x=series.values * 100,
+        y=series.index,
+        orientation='h',
+        marker_color=colors,
+        text=[f"{v*100:.1f}%" for v in series.values],
+        textposition='outside',
+    ))
+    fig.update_layout(
+        title="   Sector Weight",
+        xaxis=dict(title="Weight", ticksuffix="%", range=[0, (series.values.max() * 100) + 2.5]),
+        yaxis=dict(autorange="reversed"),
+        template="plotly_dark",
+        paper_bgcolor=PLOT_BG,
+        plot_bgcolor=PLOT_BG,
+        font=dict(color=PLOT_FG),
+        height=max(480, len(series) * 32 + 80),
+        margin=dict(l=150, r=50, t=50, b=40),
+    )
+    return fig
+
+def _plotly_sector_sunburst(series, ticker_detail, ticker_weights):
+    """
+    series: pd.Series {sector: portfolio_weight}
+    ticker_detail: {ticker: {sector: raw_sector_fraction}}  (sums to ~1 per ticker)
+    ticker_weights: dict {ticker: portfolio_weight}
+    Uses branchvalues='remainder' so parent arc = sum of children (no spikes).
+    """
+    import plotly.graph_objects as go
+    ids, labels, parents, vals, colors_sb = [], [], [], [], []
+
+    for sector, sv in series.items():
+        # Parent node — value=0 so arc = sum of children (remainder mode)
+        ids.append(sector)
+        labels.append(f"{sector}<br>{sv*100:.1f}%")
+        parents.append("")
+        vals.append(0.0)
+        colors_sb.append(SECTOR_COLORS.get(sector, ACCENT))
+
+        for t, breakdown in ticker_detail.items():
+            total_t = sum(breakdown.values()) or 1
+            sec_frac = breakdown.get(sector, 0) / total_t   # fraction of THIS ticker in this sector
+            port_w   = ticker_weights.get(t, 0)             # this ticker's portfolio weight
+            child_val = sec_frac * port_w                   # actual portfolio contribution
+            if child_val > 0:
+                node_id = f"{sector}|{t}"
+                ids.append(node_id)
+                labels.append(f"{t}<br>{child_val*100:.1f}%")
+                parents.append(sector)
+                vals.append(float(child_val))
+                colors_sb.append(SECTOR_COLORS.get(sector, ACCENT))
+
+    fig = go.Figure(go.Sunburst(
+        ids=ids, labels=labels, parents=parents, values=vals,
+        marker=dict(colors=colors_sb, line=dict(width=1.0, color="#0f0f0f")),
+        hovertemplate="%{label}<extra></extra>",
+        branchvalues="remainder",
+        textfont=dict(size=11),
+        insidetextorientation="radial",
+    ))
+    fig.update_layout(
+        paper_bgcolor=PLOT_BG,
+        font=dict(color=PLOT_FG),
+        margin=dict(l=10, r=10, t=10, b=10),
+        height=480,
+    )
+    return fig
+
 with tab_alloc:
+    dist_subtabs = st.tabs(["Allocations", "Country Distribution", "Sector Distribution", "ETF Database"])
+
+    # ── Subtab 1: Allocations ────────────────────────────────────────────────
+    with dist_subtabs[0]:
         st.markdown('<div class="section-header">Portfolio Weights</div>', unsafe_allow_html=True)
-
         col1, col2 = st.columns(2)
-
-        # draw_pie is defined globally above
-
         with col1:
-            # Ticker pie
             ticker_colors = get_ticker_colors_global(tickers, asset_classes, weights_raw)
             fig, ax = plt.subplots(figsize=(6, 5))
             fig.patch.set_facecolor(PLOT_BG)
@@ -1077,14 +1519,11 @@ with tab_alloc:
             fig.subplots_adjust(left=0.35)
             st.pyplot(fig)
             plt.close()
-
         with col2:
-            # Asset class pie
             class_weights = defaultdict(float)
             for ticker, weight in portfolio.items():
                 if ticker in asset_classes:
                     class_weights[asset_classes[ticker]] += weight
-
             if class_weights:
                 labels_ac = list(class_weights.keys())
                 sizes_ac  = list(class_weights.values())
@@ -1096,7 +1535,6 @@ with tab_alloc:
                 st.pyplot(fig)
                 plt.close()
 
-        # Holdings table
         st.markdown('<div class="section-header">Holdings</div>', unsafe_allow_html=True)
         holdings_df = pd.DataFrame({
             "Ticker":       tickers,
@@ -1105,7 +1543,6 @@ with tab_alloc:
         })
         st.dataframe(holdings_df, use_container_width=True, hide_index=True)
 
-        # Individual performance
         st.markdown('<div class="section-header">Individual Asset Performance</div>', unsafe_allow_html=True)
         ind_rows = []
         for t in available:
@@ -1122,6 +1559,245 @@ with tab_alloc:
         if ind_rows:
             st.dataframe(pd.DataFrame(ind_rows), use_container_width=True, hide_index=True)
 
+    # ── Subtab 2: Country Distribution ───────────────────────────────────────
+    with dist_subtabs[1]:
+        st.markdown('<div class="section-header">Country Distribution</div>', unsafe_allow_html=True)
+        st.caption("Geographic weight from known ETF templates + yfinance fallback. "
+                   "Individual stocks use their home country.")
+
+        with st.spinner("Calculating country exposure..."):
+            country_exp, country_per_ticker = _agg_exposure(available, list(w_aligned), 0)
+
+        if country_exp.empty:
+            st.warning("Could not determine country exposure. Check that tickers are correct.")
+        else:
+            threshold = 0.003
+            # 1. Suodatetaan kynnyksen ylittävät maat ja poistetaan mahdolliset "Other"-tuplat
+            main_c = country_exp[country_exp >= threshold].copy()
+            other_w = country_exp[country_exp < threshold].sum()
+
+            # 2. Yhdistetään älykkäästi "Other"-kategoriaan
+            if other_w > 0.001:
+                if "Other" in main_c.index:
+                    main_c["Other"] += other_w
+                else:
+                    main_c = pd.concat([main_c, pd.Series({"Other": other_w})])
+
+            # 3. JÄRJESTYS: Lajitellaan muut paitsi "Other" suuruusjärjestykseen
+            if "Other" in main_c.index:
+                other_val = main_c["Other"]
+                # Tiputetaan Other hetkeksi, lajitellaan loput, ja liitetään Other takaisin loppuun
+                main_c = main_c.drop("Other").sort_values(ascending=False)
+                main_c["Other"] = other_val
+            else:
+                main_c = main_c.sort_values(ascending=False)
+
+            # Choropleth map
+            st.plotly_chart(_plotly_choropleth(main_c), use_container_width=True, key="country_map_unique")
+
+            # Bar
+            st.plotly_chart(_plotly_country_bar(main_c), use_container_width=True, key="country_bar_unique")
+
+
+    # ── Subtab 3: Sector Distribution ─────────────────────────────────────────
+    with dist_subtabs[2]:
+        st.markdown('<div class="section-header">Sector Distribution</div>', unsafe_allow_html=True)
+        st.caption("Sector weight from known ETF templates + yfinance fallback. "
+                   "Individual stocks use their GICS sector.")
+
+        with st.spinner("Calculating sector exposure..."):
+            sector_exp, sector_per_ticker = _agg_exposure(available, list(w_aligned), 1)
+
+        if sector_exp.empty:
+            st.warning("Could not determine sector exposure. Check that tickers are correct.")
+        else:
+            threshold = 0.003
+            main_s  = sector_exp[sector_exp >= threshold]
+            other_w = sector_exp[sector_exp < threshold].sum()
+            if other_w > 0.001:
+                main_s = pd.concat([main_s, pd.Series({"Other": other_w})])
+
+            # Bar + Sunburst side by side
+            s_bar, s_sun = st.columns([3, 2])
+            with s_bar:
+                st.plotly_chart(_plotly_sector_bar(main_s), use_container_width=True, key="sector_bar_unique")
+            with s_sun:
+                _ticker_weights_map = dict(zip(available, list(w_aligned)))
+                st.plotly_chart(
+                    _plotly_sector_sunburst(main_s, sector_per_ticker, _ticker_weights_map),
+                    use_container_width=True, key="sector_sunburst_unique",
+                )
+
+            st.markdown('<div class="section-header">Sector Weights Table</div>', unsafe_allow_html=True)
+            all_sectors = list(main_s.index)
+            tbl = {
+                "Sector":    all_sectors,
+                "Portfolio": [f"{main_s.get(s, 0)*100:.1f}%" for s in all_sectors],
+            }
+            for t in available:
+                detail  = sector_per_ticker.get(t, {})
+                total_t = sum(detail.values()) or 1
+                tbl[t]  = [f"{detail.get(s, 0) / total_t * 100:.1f}%" for s in all_sectors]
+            st.dataframe(pd.DataFrame(tbl), use_container_width=True, hide_index=True)
+
+    # __ Subtab 4: ETF Database ______________________________________________
+    with dist_subtabs[3]:
+        st.caption(
+            "One table per portfolio ticker. Edit country and sector weights directly. "
+            "Weights are normalised automatically - no need to sum to 100 %. "
+            "Changes apply immediately to Country and Sector Distribution tabs."
+        )
+
+        if "etf_custom_db" not in st.session_state:
+            st.session_state["etf_custom_db"] = {}
+
+        _SECTOR_OPTIONS = [
+            "Information Technology", "Financials", "Health Care",
+            "Industrials", "Consumer Discretionary", "Consumer Staples",
+            "Communication Services", "Energy", "Materials",
+            "Real Estate", "Utilities", "Government", "Other",
+        ]
+
+        def _parse_weights(df, key_col):
+            result = {}
+            for _, row in df.iterrows():
+                k = str(row.get(key_col, "")).strip()
+                w = float(row.get("Weight %", 0) or 0)
+                if k and w > 0:
+                    result[k] = w / 100.0
+            total = sum(result.values())
+            if total > 0:
+                result = {k: v / total for k, v in result.items()}
+            return result
+
+        def _build_initial_df(ticker, kind):
+            """
+            Build initial DataFrame for the editor.
+            kind: 'countries' or 'sectors'
+            Uses: custom db -> yfinance/built-in cache.
+            Stored in session_state so editor doesn't reset on every Streamlit rerun.
+            Only refreshed when Save or Clear is pressed.
+            """
+            ss_key = f"etf_init_{kind}_{ticker.upper()}"
+            if ss_key in st.session_state:
+                return st.session_state[ss_key]
+            custom = st.session_state["etf_custom_db"].get(ticker.upper(), {})
+            src = custom.get(kind) if custom else None
+            if not src:
+                cty_w, sec_w, country, sector = _get_etf_data_cached(ticker)
+                if kind == "countries":
+                    src = cty_w or ({country: 1.0} if country else {})
+                else:
+                    sec_w = _normalise_sectors(sec_w)
+                    src = sec_w or ({sector: 1.0} if sector else {})
+            if kind == "countries":
+                rows = [{"Country": k, "Weight %": round(v * 100, 1)}
+                        for k, v in sorted(src.items(), key=lambda x: -x[1])]
+                if not rows:
+                    rows = [{"Country": "", "Weight %": 0.0}]
+                df = pd.DataFrame(rows)
+            else:
+                rows = [{"Sector": k, "Weight %": round(v * 100, 1)}
+                        for k, v in sorted(src.items(), key=lambda x: -x[1])]
+                if not rows:
+                    rows = [{"Sector": "", "Weight %": 0.0}]
+                df = pd.DataFrame(rows)
+            st.session_state[ss_key] = df
+            return df
+
+        def _reset_editor_cache(ticker):
+            """Delete the cached initial DataFrames so they rebuild on next render."""
+            tkey = ticker.upper()
+            for kind in ("countries", "sectors"):
+                k = f"etf_init_{kind}_{tkey}"
+                if k in st.session_state:
+                    del st.session_state[k]
+
+        for _t in available:
+            _tkey = _t.upper()
+            _in_custom   = _tkey in st.session_state["etf_custom_db"]
+            _cached_data = _get_etf_data_cached(_t)
+            _has_data    = _cached_data != ({}, {}, None, None)
+            _source_label = "" # (tai mitä tahansa aiemmassa koodissasi olikaan)
+
+            st.markdown(
+                f'<div class="section-header">{_t}'
+                f'<span style="font-size:0.7rem;color:#888;font-weight:400;letter-spacing:0">'
+                f'&ensp;{_source_label}</span></div>',
+                unsafe_allow_html=True,
+            )
+
+            # 1. Luodaan tyhjät containerit visuaalista järjestystä varten
+            ui_top = st.container()
+            ui_tables = st.container()
+
+            # 2. Ajetaan taulukot ensin koodissa (mutta asetetaan ne alempaan containeriin)
+            with ui_tables:
+                _col_cty, _col_sec = st.columns(2)
+
+                with _col_cty:
+                    st.caption("Country weights")
+                    _cty_df = st.data_editor(
+                        _build_initial_df(_t, "countries"),
+                        num_rows="dynamic",
+                        use_container_width=True,
+                        key=f"etf_cty_{_tkey}",
+                        column_config={
+                            "Country":  st.column_config.TextColumn("Country", width="medium"),
+                            "Weight %": st.column_config.NumberColumn("Weight %", min_value=0.0, max_value=100.0, step=0.1, format="%.1f"),
+                        },
+                        hide_index=True,
+                    )
+
+                with _col_sec:
+                    st.caption("Sector weights")
+                    _sec_df = st.data_editor(
+                        _build_initial_df(_t, "sectors"),
+                        num_rows="dynamic",
+                        use_container_width=True,
+                        key=f"etf_sec_{_tkey}",
+                        column_config={
+                            "Sector":   st.column_config.SelectboxColumn("Sector", options=_SECTOR_OPTIONS, width="medium"),
+                            "Weight %": st.column_config.NumberColumn("Weight %", min_value=0.0, max_value=100.0, step=0.1, format="%.1f"),
+                        },
+                        hide_index=True,
+                    )
+
+            # 3. Ajetaan nappien logiikka vasta taulukoiden jälkeen (mutta sijoitetaan ylempään containeriin)
+            with ui_top:
+                _btn_col, _clr_col = st.columns([3, 1])
+                with _btn_col:
+                    if st.button(f"Save {_t}", key=f"etf_save_{_tkey}", width=150, type="primary"):
+                        # Nyt _cty_df ja _sec_df sisältävät oikeasti juuri ne arvot, jotka syötit tähän tickeriin!
+                        _cty_parsed = _parse_weights(_cty_df, "Country")
+                        _sec_parsed = _parse_weights(_sec_df, "Sector")
+                        
+                        if not _cty_parsed and not _sec_parsed:
+                            st.error(f"{_t}: enter at least one country or sector weight.")
+                        else:
+                            st.session_state["etf_custom_db"][_tkey] = {
+                                "countries": _cty_parsed,
+                                "sectors":   _normalise_sectors(_sec_parsed),
+                            }
+                            _reset_editor_cache(_t)
+                            for _ek in (f"etf_cty_{_tkey}", f"etf_sec_{_tkey}"):
+                                if _ek in st.session_state:
+                                    del st.session_state[_ek]
+                            st.rerun()
+                
+                with _clr_col:
+                    if _in_custom:
+                        if st.button(f"Clear {_t}", key=f"etf_clr_{_tkey}", width=150):
+                            del st.session_state["etf_custom_db"][_tkey]
+                            _reset_editor_cache(_t)
+                            for _ek in (f"etf_cty_{_tkey}", f"etf_sec_{_tkey}"):
+                                if _ek in st.session_state:
+                                    del st.session_state[_ek]
+                            st.rerun()
+                            
+            st.write("---") # Lisää nätin erotinviivan tickerien väliin
+
+gc.collect()
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 6 – CORRELATIONS
@@ -1216,6 +1892,8 @@ with tab_corr:
                     plt.close()
 
         render_correlations()
+
+gc.collect()
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 7 – FI FORECAST
@@ -1527,6 +2205,7 @@ with tab_fi:
 
         render_fi()
 
+gc.collect()
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 8 – OPTIMIZATION
@@ -1838,3 +2517,5 @@ with tab_report:
                     st.success("Report ready - click above to download.")
                 except Exception as e:
                     st.error(f"Report failed: {e}")
+
+gc.collect()
