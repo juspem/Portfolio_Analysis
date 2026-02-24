@@ -570,7 +570,7 @@ m = {
 
 # ── Tabs ──────────────────────────────────────────────────────────────────────
 # ── Custom tab navigation with session_state memory ──────────────────────────
-_TAB_NAMES = ["Overview", "Performance", "Risk", "Benchmark", "Allocation", "Correlations", "FI Forecast", "Report"]
+_TAB_NAMES = ["Overview", "Performance", "Risk", "Benchmark", "Allocation", "Correlations", "FI Forecast", "Optimization", "Report"]
 if "active_tab" not in st.session_state:
     st.session_state["active_tab"] = 0
 
@@ -624,7 +624,8 @@ tab_bench    = _active_tab == 3
 tab_alloc    = _active_tab == 4
 tab_corr     = _active_tab == 5
 tab_fi       = _active_tab == 6
-tab_report   = _active_tab == 7
+tab_opt      = _active_tab == 7
+tab_report   = _active_tab == 8
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1019,6 +1020,104 @@ if tab_bench:
     plt.close()
 
 
+# ── Shared pie chart color helpers & draw_pie (used in Allocation + Optimization) ──
+import colorsys as _colorsys
+
+ASSET_GROUP_COLORS = [
+    (['etf', 'stocks', 'fund', 'index', 'tracker', 'ishares', 'vanguard',
+      'msci', 'sp500', 's&p', 'nasdaq', 'dow', 'russell', 'country etf',
+      'sector etf', 'bond etf', 'equity etf', 'eft'],       "#2e80b8"),
+    (['stock', 'equity', 'share', 'growth', 'value', 'small cap',
+      'mid cap', 'large cap', 'dividend'],                    "#d44535"),
+    (['cash', 'money market', 'savings', 'deposit', 'liquidity',
+      'eurusd=x', 'usdeur=x', 'gbpusd=x', 'usdgbp=x', 'usdjpy=x',
+      'jpyusd=x', 'usdchf=x', 'chfusd=x', 'usdcad=x', 'cadusd=x',
+      'audusd=x', 'usdaud=x', 'nzdusd=x', 'usdnzd=x', 'usdsek=x',
+      'usdnok=x', 'usddkk=x', 'usdpln=x', 'usdhuf=x', 'usdczk=x',
+      'usdsgd=x', 'usdhkd=x', 'usdcny=x', 'usdtry=x', 'usdinr=x',
+      'usdbrl=x', 'usdmxn=x', 'usdzar=x', 'usdkrw=x',
+      'eurusd', 'gbpusd', 'usdjpy', 'usdchf', 'usdcad', 'audusd',
+      'nzdusd', 'usd', 'eur', 'gbp', 'jpy', 'chf'],          "#29b864"),
+    (['bond', 'fixed income', 'treasury', 'gilt', 'note',
+      'corporate bond', 'municipal', 'high yield', 'duration'],  '#f39c12'),
+    (['reit', 'real estate', 'property', 'infrastructure'],  '#e67e22'),
+    (['commodity', 'gold', 'silver', 'oil', 'gas', 'copper',
+      'wheat', 'corn', 'platinum', 'natural resource'],       '#95a5a6'),
+    (['crypto', 'bitcoin', 'ethereum', 'btc', 'eth', 'xrp', 'sol',
+      'bnb', 'doge', 'ada', 'avax', 'btc-usd', 'eth-usd', 'usdt',
+      'usdc', 'dai'],                                          '#fd79a8'),
+    (['forex', 'currency', 'fx', '=x', 'eurgbp=x', 'eurjpy=x'],  '#f1c40f'),
+]
+
+def _get_group_color(label):
+    l = label.lower()
+    for keywords, color in ASSET_GROUP_COLORS:
+        if any(kw in l for kw in keywords):
+            return color
+    return '#7f8c8d'
+
+def get_ticker_colors_global(ticker_list, asset_classes_dict, sizes):
+    """Each ticker gets its own shade derived from its asset group color."""
+    groups = {}
+    for t in ticker_list:
+        ac_label = asset_classes_dict.get(t, '')
+        color = _get_group_color(ac_label)
+        if color == '#7f8c8d':
+            color = _get_group_color(t)
+        groups.setdefault(color, []).append(t)
+    ticker_color_map = {}
+    for base_hex, group_tickers in groups.items():
+        r = int(base_hex[1:3], 16) / 255
+        g = int(base_hex[3:5], 16) / 255
+        b = int(base_hex[5:7], 16) / 255
+        h, s, v = _colorsys.rgb_to_hsv(r, g, b)
+        n = len(group_tickers)
+        group_tickers_sorted = sorted(group_tickers, key=lambda t: ticker_list.index(t))
+        weights_in_group = [sizes[ticker_list.index(t)] for t in group_tickers_sorted]
+        group_tickers_sorted = [t for _, t in sorted(
+            zip(weights_in_group, group_tickers_sorted), reverse=True)]
+        for idx, t in enumerate(group_tickers_sorted):
+            if n == 1:
+                new_h, new_s, new_v = h, s, v
+            else:
+                new_h = h
+                new_s = max(0.25, s - idx * 0.20)
+                new_v = min(1.0, v + idx * 0.22)
+            nr, ng, nb = _colorsys.hsv_to_rgb(new_h, new_s, new_v)
+            ticker_color_map[t] = '#{:02x}{:02x}{:02x}'.format(
+                int(nr * 255), int(ng * 255), int(nb * 255))
+    return [ticker_color_map[t] for t in ticker_list]
+
+def draw_pie(ax, sizes, labels, colors, title, filter_zero=False):
+    """Draw a pie chart with labels+percentages in a legend, no overlapping text.
+    If filter_zero=True, slices with 0% weight are excluded from the legend."""
+    if filter_zero:
+        filtered = [(s, l, c) for s, l, c in zip(sizes, labels, colors) if s > 0.0005]
+        if filtered:
+            sizes, labels, colors = zip(*filtered)
+            sizes, labels, colors = list(sizes), list(labels), list(colors)
+    wedges, _ = ax.pie(
+        sizes,
+        colors=colors,
+        startangle=140,
+        wedgeprops=dict(linewidth=0.5 if len(sizes) > 1 else 0, edgecolor="#0f0f0f"),
+        explode=[0.00] * len(sizes),
+    )
+    legend_labels = [f"{lbl}  {sz:.1%}" for lbl, sz in zip(labels, sizes)]
+    ax.legend(
+        wedges, legend_labels,
+        loc='center left',
+        bbox_to_anchor=(-0.45, 0.5),
+        fontsize=9,
+        frameon=True,
+        facecolor='#1a1a1a',
+        edgecolor='#2a2a2a',
+        labelcolor=PLOT_FG,
+    )
+    ax.set_title(title, color=PLOT_FG, pad=12, loc='center')
+    ax.set_facecolor(PLOT_BG)
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 5 – ALLOCATION
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1027,151 +1126,14 @@ if tab_alloc:
 
     col1, col2 = st.columns(2)
 
-    # Keyword-based group colors — anything matching a keyword gets this base color
-    ASSET_GROUP_COLORS = [
-        (['etf', 'stocks', 'fund', 'index', 'tracker', 'ishares', 'vanguard',
-          'msci', 'sp500', 's&p', 'nasdaq', 'dow', 'russell', 'country etf',
-          'sector etf', 'bond etf', 'equity etf', 'eft'],       "#2e80b8"),  # blue
-        (['stock', 'equity', 'share', 'growth', 'value', 'small cap',
-          'mid cap', 'large cap', 'dividend'],                    "#d44535"),  # red
-        (['cash', 'money market', 'savings', 'deposit', 'liquidity',
-          # Fiat spot pairs (Yahoo Finance format)
-          'eurusd=x', 'usdeur=x', 'gbpusd=x', 'usdgbp=x', 'usdjpy=x',
-          'jpyusd=x', 'usdchf=x', 'chfusd=x', 'usdcad=x', 'cadusd=x',
-          'audusd=x', 'usdaud=x', 'nzdusd=x', 'usdnzd=x', 'usdsek=x',
-          'usdnok=x', 'usddkk=x', 'usdpln=x', 'usdhuf=x', 'usdczk=x',
-          'usdsgd=x', 'usdhkd=x', 'usdcny=x', 'usdtry=x', 'usdinr=x',
-          'usdbrl=x', 'usdmxn=x', 'usdzar=x', 'usdkrw=x',
-          # Generic currency keywords
-          'eurusd', 'gbpusd', 'usdjpy', 'usdchf', 'usdcad', 'audusd',
-          'nzdusd', 'usd', 'eur', 'gbp', 'jpy', 'chf'],          "#29b864"),  # green
-        (['bond', 'fixed income', 'treasury', 'gilt', 'note',
-          'corporate bond', 'municipal', 'high yield', 'duration'],  '#f39c12'),  # orange
-        (['reit', 'real estate', 'property', 'infrastructure'],  '#e67e22'),  # dark orange
-        (['commodity', 'gold', 'silver', 'oil', 'gas', 'copper',
-          'wheat', 'corn', 'platinum', 'natural resource'],       '#95a5a6'),  # gray
-        (['crypto', 'bitcoin', 'ethereum', 'altcoin', 'defi', 'web3',
-          # Base names
-          'btc', 'eth', 'xrp', 'sol', 'bnb', 'doge', 'ada', 'avax',
-          'dot', 'matic', 'ltc', 'link', 'uni', 'atom', 'xlm', 'algo',
-          'icp', 'fil', 'hbar', 'near', 'apt', 'arb', 'op', 'sui',
-          'trx', 'shib', 'pepe', 'floki', 'inj', 'sei', 'ton', 'kas',
-          # USD pairs
-          'btcusd', 'ethusd', 'xrpusd', 'solusd', 'bnbusd', 'dogeusd',
-          'adausd', 'avaxusd', 'dotusd', 'maticusd', 'ltcusd', 'linkusd',
-          'uniusd', 'atomusd', 'xlmusd', 'algousd', 'icpusd', 'filusd',
-          'hbarusd', 'nearusd', 'aptusd', 'arbusd', 'opusd', 'suiusd',
-          'trxusd', 'shibusd', 'pepeusd', 'injusd', 'seiusd', 'tonusd',
-          # EUR pairs
-          'btceur', 'etheur', 'xrpeur', 'soleur', 'bnbeur', 'dogeeur',
-          'adaeur', 'avaxeur', 'doteur', 'maticeur', 'ltceur', 'linkeur',
-          'unieur', 'atomeur', 'xlmeur', 'algoeur', 'icpeur', 'fileur',
-          'hbareur', 'neareur', 'apteur', 'arbeur', 'opeur', 'suieur',
-          'trxeur', 'shibeur', 'pepeeur', 'injeur', 'seieur', 'toneur',
-          # Yahoo Finance format (COIN-USD / COIN-EUR)
-          'btc-usd', 'eth-usd', 'xrp-usd', 'sol-usd', 'bnb-usd',
-          'doge-usd', 'ada-usd', 'avax-usd', 'dot-usd', 'matic-usd',
-          'ltc-usd', 'link-usd', 'uni-usd', 'atom-usd', 'xlm-usd',
-          'algo-usd', 'icp-usd', 'fil-usd', 'hbar-usd', 'near-usd',
-          'apt-usd', 'arb-usd', 'op-usd', 'sui-usd', 'trx-usd',
-          'shib-usd', 'pepe-usd', 'inj-usd', 'sei-usd', 'ton-usd',
-          'kas-usd', 'fet-usd', 'render-usd', 'grt-usd', 'sand-usd',
-          'mana-usd', 'axs-usd', 'flow-usd', 'egld-usd', 'theta-usd',
-          'btc-eur', 'eth-eur', 'xrp-eur', 'sol-eur', 'bnb-eur',
-          'doge-eur', 'ada-eur', 'avax-eur', 'dot-eur', 'matic-eur',
-          'ltc-eur', 'link-eur', 'uni-eur', 'atom-eur', 'xlm-eur',
-          'algo-eur', 'icp-eur', 'fil-eur', 'hbar-eur', 'near-eur',
-          'apt-eur', 'arb-eur', 'op-eur', 'sui-eur', 'trx-eur',
-          'shib-eur', 'pepe-eur', 'inj-eur', 'sei-eur', 'ton-eur',
-          # Stablecoins
-          'usdt', 'usdc', 'dai', 'busd', 'tusd', 'frax'],        '#fd79a8'),  # pink
-        (['forex', 'currency', 'fx',
-          # Yahoo Finance forex format (XXXYYY=X)
-          'eurusd=x', 'gbpusd=x', 'usdjpy=x', 'usdchf=x', 'usdcad=x',
-          'audusd=x', 'nzdusd=x', 'usdsek=x', 'usdnok=x', 'usddkk=x',
-          'usdpln=x', 'usdhuf=x', 'usdczk=x', 'usdsgd=x', 'usdhkd=x',
-          'usdcny=x', 'usdtry=x', 'usdinr=x', 'usdbrl=x', 'usdmxn=x',
-          'usdzar=x', 'usdkrw=x', 'usdphp=x', 'usdthb=x', 'usdidr=x',
-          'eurgbp=x', 'eurjpy=x', 'eurchf=x', 'eurcad=x', 'euraud=x',
-          'eurnzd=x', 'eursek=x', 'eurnok=x', 'gbpjpy=x', 'gbpchf=x',
-          'gbpcad=x', 'gbpaud=x', 'gbpnzp=x', 'chfjpy=x', 'cadjpy=x',
-          'audjpy=x', 'nzdjpy=x', 'audcad=x', 'audchf=x', 'audnzd=x',
-          '=x'],                                                  '#f1c40f'),  # yellow
-    ]
-
+    # Use global color helpers defined above
     def get_group_color(label):
-        """Return base group color by matching keywords in label or ticker symbol."""
-        l = label.lower()
-        for keywords, color in ASSET_GROUP_COLORS:
-            if any(kw in l for kw in keywords):
-                return color
-        return '#7f8c8d'  # fallback gray
+        return _get_group_color(label)
 
     def get_ticker_colors(ticker_list, asset_classes_dict, sizes):
-        """Each ticker gets its own shade derived from its asset group color.
-        Falls back to matching the ticker symbol itself when asset class gives no match."""
-        import colorsys
-        groups = defaultdict(list)
-        for t in ticker_list:
-            ac_label = asset_classes_dict.get(t, '')
-            color = get_group_color(ac_label)
-            # If asset class didn't match, try the ticker symbol itself
-            if color == '#7f8c8d':
-                color = get_group_color(t)
-            groups[color].append(t)
-        ticker_color_map = {}
-        for base_hex, group_tickers in groups.items():
-            r = int(base_hex[1:3], 16) / 255
-            g = int(base_hex[3:5], 16) / 255
-            b = int(base_hex[5:7], 16) / 255
-            h, s, v = colorsys.rgb_to_hsv(r, g, b)
-            n = len(group_tickers)
-            # Sort tickers in group by weight descending — largest gets base color
-            group_tickers_sorted = sorted(
-                group_tickers,
-                key=lambda t: ticker_list.index(t)
-            )
-            weights_in_group = [sizes[ticker_list.index(t)] for t in group_tickers_sorted]
-            # Re-sort by weight descending so biggest gets idx=0 (base color)
-            group_tickers_sorted = [t for _, t in sorted(
-                zip(weights_in_group, group_tickers_sorted), reverse=True)]
-            for idx, t in enumerate(group_tickers_sorted):
-                if n == 1:
-                    new_h, new_s, new_v = h, s, v
-                else:
-                    # Keep hue identical, only brighten each step
-                    new_h = h
-                    new_s = max(0.25, s - idx * 0.20)
-                    new_v = min(1.0, v + idx * 0.22)
-                nr, ng, nb = colorsys.hsv_to_rgb(new_h, new_s, new_v)
-                ticker_color_map[t] = '#{:02x}{:02x}{:02x}'.format(
-                    int(nr * 255), int(ng * 255), int(nb * 255))
-        return [ticker_color_map[t] for t in ticker_list]
+        return get_ticker_colors_global(ticker_list, asset_classes_dict, sizes)
 
-    def draw_pie(ax, sizes, labels, colors, title):
-        """Draw a pie chart with labels+percentages in a legend, no overlapping text."""
-        explode = [0.00] * len(sizes)
-        wedges, _ = ax.pie(
-            sizes,
-            colors=colors,
-            startangle=140,
-            wedgeprops=dict(linewidth=0.5 if len(sizes) > 1 else 0, edgecolor="#0f0f0f"),
-            explode=explode,
-        )
-        # Build legend labels: "TICKER  12.3%"
-        legend_labels = [f"{lbl}  {sz:.1%}" for lbl, sz in zip(labels, sizes)]
-        ax.legend(
-            wedges, legend_labels,
-            loc='center left',
-            bbox_to_anchor=(-0.45, 0.5),
-            fontsize=9,
-            frameon=True,
-            facecolor='#1a1a1a',
-            edgecolor='#2a2a2a',
-            labelcolor=PLOT_FG,
-        )
-        ax.set_title(title, color=PLOT_FG, pad=12)
-        ax.set_facecolor(PLOT_BG)
+    # draw_pie is defined globally above
 
     with col1:
         # Ticker pie
@@ -1491,7 +1453,7 @@ if tab_fi:
                 target = spend_k / safe_withdrawal_rate
                 legend_label = f"{label} target: {fmt_dollars(target)}"
                 if target <= y_top:
-                    # Target is within chart range — draw horizontal line
+                    # Target is within chart range - draw horizontal line
                     ax.axhline(target, color=color, linewidth=0.8, linestyle=':',
                                alpha=0.5, label=legend_label)
                     # Mark first crossing during accumulation
@@ -1502,7 +1464,7 @@ if tab_fi:
                                    color=color, s=60, zorder=5, marker='*',
                                    edgecolors='white', linewidth=0.5)
                 else:
-                    # Target above chart — invisible proxy so it still appears in legend
+                    # Target above chart - invisible proxy so it still appears in legend
                     ax.plot([], [], color=color, linewidth=0.8, linestyle=':',
                             alpha=0.5, label=legend_label)
 
@@ -1645,7 +1607,256 @@ if tab_fi:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# TAB 8 – REPORT
+# TAB 8 – OPTIMIZATION
+# ══════════════════════════════════════════════════════════════════════════════
+if tab_opt:
+    from scipy.optimize import minimize
+
+    st.markdown('<div class="section-header">Portfolio Optimization</div>', unsafe_allow_html=True)
+    st.caption(
+        "Modern Portfolio Theory (MPT) - finds the weight distribution that maximises "
+        "return relative to risk, or minimises volatility."
+    )
+
+    if len(available) < 2:
+        st.warning("Optimization requires at least 2 tickers.")
+    else:
+        # ── Helper functions using existing `returns` and `w_aligned` ──────────
+        _ret_mat = returns[available]  # daily returns DataFrame
+
+        def _port_stats(w):
+            """Annual return, annual volatility, Sharpe for weight array w."""
+            r   = float((_ret_mat @ w).mean() * 252)
+            vol = float(np.sqrt(w @ (_ret_mat.cov() * 252).values @ w))
+            sh  = (r - risk_free_rate) / vol if vol > 0 else 0.0
+            return r, vol, sh
+
+        def _neg_sharpe(w):
+            r, vol, _ = _port_stats(w)
+            return -(r - risk_free_rate) / vol if vol > 0 else 0.0
+
+        def _port_vol(w):
+            return _port_stats(w)[1]
+
+        _n      = len(available)
+        _bounds = [(0.0, 1.0)] * _n
+        _cons   = {"type": "eq", "fun": lambda w: np.sum(w) - 1}
+        _w0     = np.ones(_n) / _n
+
+        with st.spinner("Running optimization & efficient frontier (4 000 simulations)..."):
+            # Max Sharpe
+            _res_sh = minimize(_neg_sharpe, _w0, method="SLSQP", bounds=_bounds, constraints=_cons)
+            _w_sh   = _res_sh.x
+            _r_sh, _v_sh, _s_sh = _port_stats(_w_sh)
+
+            # Min Volatility
+            _res_mv = minimize(_port_vol, _w0, method="SLSQP", bounds=_bounds, constraints=_cons)
+            _w_mv   = _res_mv.x
+            _r_mv, _v_mv, _s_mv = _port_stats(_w_mv)
+
+            # Monte Carlo efficient frontier
+            _np    = 4000
+            _rets  = np.zeros(_np)
+            _vols  = np.zeros(_np)
+            _shrps = np.zeros(_np)
+            _wmat  = np.zeros((_np, _n))
+            rng    = np.random.default_rng(42)
+            for _i in range(_np):
+                _w = rng.dirichlet(np.ones(_n))
+                _r2, _v2, _s2 = _port_stats(_w)
+                _rets[_i]  = _r2
+                _vols[_i]  = _v2
+                _shrps[_i] = _s2
+                _wmat[_i]  = _w
+
+        # Current portfolio stats (reuse existing variables)
+        _r_cur  = float(m["Annual Return"])
+        _v_cur  = float(m["Annual Volatility"])
+
+        # Current weights dict
+        _cur_w_dict = {t: float(w) for t, w in zip(available, w_aligned)}
+
+        opt_subtabs = st.tabs([
+            "Max Sharpe",
+            "Min Volatility",
+            "Efficient Frontier 2D",
+            "Efficient Frontier 3D",
+        ])
+
+        # ── Max Sharpe ───────────────────────────────────────────────────────
+        with opt_subtabs[0]:
+            st.markdown("**Best Sharpe ratio** - maximises return/risk ratio.")
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Expected Annual Return", f"{_r_sh:.2%}")
+            c2.metric("Volatility",             f"{_v_sh:.2%}")
+            c3.metric("Sharpe Ratio",           f"{_s_sh:.2f}")
+
+            _w_df_sh = pd.DataFrame([
+                {
+                    "Ticker":           t,
+                    "Current weight":   f"{_cur_w_dict.get(t, 0):.1%}",
+                    "Optimal weight":   f"{w:.1%}",
+                    "Change":           f"{w - _cur_w_dict.get(t, 0):+.1%}",
+                }
+                for t, w in zip(available, _w_sh)
+            ])
+            st.dataframe(_w_df_sh, use_container_width=True, hide_index=True)
+
+            _pc1, _pc2 = st.columns(2)
+            _sizes_cur  = [_cur_w_dict.get(t, 0) for t in available]
+            _opt_colors = get_ticker_colors_global(available, asset_classes, _sizes_cur)
+            with _pc1:
+                fig, ax = plt.subplots(figsize=(6, 5))
+                fig.patch.set_facecolor(PLOT_BG)
+                draw_pie(ax, _sizes_cur, available, _opt_colors, "Current")
+                fig.subplots_adjust(left=0.35)
+                st.pyplot(fig)
+                plt.close()
+            with _pc2:
+                _w_sh_colors = get_ticker_colors_global(available, asset_classes, list(_w_sh))
+                fig, ax = plt.subplots(figsize=(6, 5))
+                fig.patch.set_facecolor(PLOT_BG)
+                draw_pie(ax, list(_w_sh), available, _w_sh_colors, "Max Sharpe", filter_zero=True)
+                fig.subplots_adjust(left=0.35)
+                st.pyplot(fig)
+                plt.close()
+
+        # ── Min Volatility ───────────────────────────────────────────────────
+        with opt_subtabs[1]:
+            st.markdown("**Minimum risk** - suitable for conservative investors.")
+            c1, c2 = st.columns(2)
+            c1.metric("Expected Annual Return", f"{_r_mv:.2%}")
+            c2.metric("Volatility",             f"{_v_mv:.2%}")
+
+            _w_df_mv = pd.DataFrame([
+                {
+                    "Ticker":           t,
+                    "Current weight":   f"{_cur_w_dict.get(t, 0):.1%}",
+                    "Optimal weight":   f"{w:.1%}",
+                    "Change":           f"{w - _cur_w_dict.get(t, 0):+.1%}",
+                }
+                for t, w in zip(available, _w_mv)
+            ])
+            st.dataframe(_w_df_mv, use_container_width=True, hide_index=True)
+
+            _pc3, _pc4 = st.columns(2)
+            with _pc3:
+                fig, ax = plt.subplots(figsize=(6, 5))
+                fig.patch.set_facecolor(PLOT_BG)
+                draw_pie(ax, _sizes_cur, available, _opt_colors, "Current")
+                fig.subplots_adjust(left=0.35)
+                st.pyplot(fig)
+                plt.close()
+            with _pc4:
+                _w_mv_colors = get_ticker_colors_global(available, asset_classes, list(_w_mv))
+                fig, ax = plt.subplots(figsize=(6, 5))
+                fig.patch.set_facecolor(PLOT_BG)
+                draw_pie(ax, list(_w_mv), available, _w_mv_colors, "Min Volatility", filter_zero=True)
+                fig.subplots_adjust(left=0.35)
+                st.pyplot(fig)
+                plt.close()
+
+        # ── Efficient Frontier 2D ────────────────────────────────────────────
+        with opt_subtabs[2]:
+            fig, ax = plt.subplots(figsize=(10, 6))
+            sc = ax.scatter(_vols * 100, _rets * 100, c=_shrps, cmap="RdYlGn",
+                            alpha=0.5, s=6, linewidths=0)
+            plt.colorbar(sc, ax=ax, label="Sharpe Ratio")
+            # Current portfolio
+            ax.scatter(_v_cur * 100, _r_cur * 100, marker="o", s=80,
+                       color=ACCENT2, zorder=5, label="Current portfolio")
+            # Max Sharpe point
+            ax.scatter(_v_sh * 100, _r_sh * 100, marker="D", s=50,
+                       color=ACCENT, zorder=5, label=f"Max Sharpe ({_s_sh:.2f})")
+            # Min Vol point
+            ax.scatter(_v_mv * 100, _r_mv * 100, marker="s", s=55,
+                       color=ACCENT3, zorder=5, label=f"Min Volatility")
+            ax.set_xlabel("Annual Volatility")
+            ax.set_ylabel("Annual Return")
+            ax.set_title("Efficient Frontier")
+            ax.legend(fontsize=9, borderpad=0.6)
+            ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"{x:.0f}%"))
+            ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"{x:.0f}%"))
+            apply_style(fig, [ax])
+            fig.tight_layout()
+            st.pyplot(fig)
+            plt.close()
+            st.caption(
+                "Each dot = randomly generated portfolio. Colour = Sharpe ratio. "
+                "Red star = your current portfolio. Green triangle = Max Sharpe. Blue diamond = Min Volatility."
+            )
+
+        # ── Efficient Frontier 3D ────────────────────────────────────────────
+        with opt_subtabs[3]:
+            import plotly.graph_objects as go
+            _cur_sharpe = (_r_cur - risk_free_rate) / _v_cur if _v_cur > 0 else 0
+
+            _fig3d = go.Figure()
+
+            # Scatter cloud
+            _fig3d.add_trace(go.Scatter3d(
+                x=_vols * 100,
+                y=_rets * 100,
+                z=_shrps,
+                mode="markers",
+                marker=dict(
+                    size=2,
+                    color=_shrps,
+                    colorscale="RdYlGn",
+                    opacity=0.5,
+                    colorbar=dict(title="Sharpe", thickness=12, len=0.6),
+                ),
+                name="Simulated Portfolios",
+                hovertemplate="Vol: %{x:.1f}%<br>Return: %{y:.1f}%<br>Sharpe: %{z:.2f}<extra></extra>",
+            ))
+
+            # Current portfolio
+            _fig3d.add_trace(go.Scatter3d(
+                x=[_v_cur * 100], y=[_r_cur * 100], z=[_cur_sharpe],
+                mode="markers",
+                marker=dict(size=8, color=ACCENT2, symbol="circle"),
+                name="Current portfolio",
+                hovertemplate=f"Current<br>Vol: {_v_cur*100:.1f}%<br>Return: {_r_cur*100:.1f}%<br>Sharpe: {_cur_sharpe:.2f}<extra></extra>",
+            ))
+
+            # Max Sharpe
+            _fig3d.add_trace(go.Scatter3d(
+                x=[_v_sh * 100], y=[_r_sh * 100], z=[_s_sh],
+                mode="markers",
+                marker=dict(size=6, color=ACCENT, symbol="diamond"),
+                name=f"Max Sharpe ({_s_sh:.2f})",
+                hovertemplate=f"Max Sharpe<br>Vol: {_v_sh*100:.1f}%<br>Return: {_r_sh*100:.1f}%<br>Sharpe: {_s_sh:.2f}<extra></extra>",
+            ))
+
+            # Min Volatility
+            _fig3d.add_trace(go.Scatter3d(
+                x=[_v_mv * 100], y=[_r_mv * 100], z=[_s_mv],
+                mode="markers",
+                marker=dict(size=8, color=ACCENT3, symbol="square"),
+                name="Min Volatility",
+                hovertemplate=f"Min Vol<br>Vol: {_v_mv*100:.1f}%<br>Return: {_r_mv*100:.1f}%<br>Sharpe: {_s_mv:.2f}<extra></extra>",
+            ))
+
+            _fig3d.update_layout(
+                title="            Efficient Frontier 3D",
+                scene=dict(
+                    xaxis=dict(title="Volatility",  backgroundcolor=PLOT_BG, tickformat=".0f", ticksuffix="%", gridcolor="#2a2a2a", color=PLOT_FG),
+                    yaxis=dict(title="Return",      backgroundcolor=PLOT_BG, tickformat=".0f", ticksuffix="%", gridcolor="#2a2a2a", color=PLOT_FG),
+                    zaxis=dict(title="Sharpe",      backgroundcolor=PLOT_BG, tickformat=".1f", gridcolor="#2a2a2a", color=PLOT_FG),
+                    bgcolor=PLOT_BG,
+                ),
+                paper_bgcolor=PLOT_BG,
+                plot_bgcolor=PLOT_BG,
+                font=dict(color=PLOT_FG),
+                legend=dict(bgcolor=PLOT_BG, bordercolor="#2a2a2a"),
+                height=650,
+            )
+            st.plotly_chart(_fig3d, use_container_width=True)
+            st.caption("X = volatility, Y = return, Z = Sharpe ratio. Drag to rotate, scroll to zoom.")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 9 – REPORT
 # ══════════════════════════════════════════════════════════════════════════════
 if tab_report:
     st.markdown('<div class="section-header">Full Metrics Report</div>', unsafe_allow_html=True)
