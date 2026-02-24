@@ -1,4 +1,5 @@
-jupyter
+streamlit>=1.30.0
+altair<5
 pandas
 yfinance
 numpy
@@ -6,6 +7,4 @@ matplotlib
 quantstats
 seaborn
 plotly
-streamlit
 scipy
-ipykernel
