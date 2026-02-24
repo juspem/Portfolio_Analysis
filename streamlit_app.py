@@ -15,11 +15,34 @@ import warnings
 import io
 import os
 import tempfile
+import requests
 
 warnings.filterwarnings('ignore')
 
 import my_portfolio as _p
 import json
+
+# 1. Luodaan istunto, joka näyttää tavalliselta selaimelta
+@st.cache_resource
+def get_session():
+    session = requests.Session()
+    session.headers.update({
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+    })
+    return session
+
+# 2. Luodaan funktio, joka lataa datan ja tallentaa sen välimuistiin (esim. 1 tunniksi)
+@st.cache_data(ttl=3600)
+def download_data(tickers, start, end):
+    try:
+        session = get_session()
+        data = yf.download(tickers, start=start, end=end, session=session, group_by='column')
+        if data.empty:
+            return None
+        return data
+    except Exception as e:
+        st.error(f"Datan lataus epäonnistui: {e}")
+        return None
 
 # ── Load user config (overrides my_portfolio.py without touching it) ──────────
 _CONFIG_FILE = os.path.join(os.path.dirname(__file__), "portfolio_config.json")
@@ -30,10 +53,6 @@ def _load_config():
         with open(_CONFIG_FILE, "r", encoding="utf-8") as f:
             return json.load(f)
     return {}
-
-def _save_config(cfg: dict):
-    with open(_CONFIG_FILE, "w", encoding="utf-8") as f:
-        json.dump(cfg, f, indent=2, ensure_ascii=False)
 
 _cfg = _load_config()
 
@@ -338,7 +357,6 @@ portfolio     = dict(zip(tickers, weights_raw))
 if len(asset_classes_raw) == 1:
     asset_classes_raw = asset_classes_raw * len(tickers)
 asset_classes = dict(zip(tickers, asset_classes_raw))
-weights       = np.array(weights_raw)
 
 # ── Title ─────────────────────────────────────────────────────────────────────
 st.markdown("# Portfolio Analysis")
@@ -359,14 +377,14 @@ elif abs(weight_sum - 1.0) > 1e-4:
 
 
 # ── Data loading ──────────────────────────────────────────────────────────────
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, ttl=3600)
 def load_data(tickers, start, end):
     data = yf.download(tickers, start=start, end=end, auto_adjust=True, progress=False)
     if isinstance(data.columns, pd.MultiIndex):
         data = data["Close"]
     return data
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, ttl=3600)
 def load_benchmark(ticker, start, end):
     df = yf.download(ticker, start=start, end=end, auto_adjust=True, progress=False)
     if isinstance(df.columns, pd.MultiIndex):
@@ -558,22 +576,19 @@ _TAB_NAMES = ["Overview", "Performance", "Risk", "Benchmark", "Allocation",
 # TAB 1 – OVERVIEW
 # ══════════════════════════════════════════════════════════════════════════════
 
-col1, col2, col3, col4 = st.columns(4)
 current_portfolio_value_native = (1 + p_ret).cumprod().iloc[-1] * initial_investment_native
 current_portfolio_value_disp   = current_portfolio_value_native * fx_native_to_display
 initial_investment_disp        = initial_investment if purchase_currency == display_currency \
                                     else initial_investment * fx_purchase_to_native * fx_native_to_display
 total_gain_disp = current_portfolio_value_disp - initial_investment_disp
-current_portfolio_value = current_portfolio_value_native  # alias for rest of file
+current_portfolio_value = current_portfolio_value_native  # alias used in FI tab
 
 with tab_overview:
+        col1, col2, col3, col4 = st.columns(4)
+
         def metric_html(label, value, fmt=".2%", positive_good=True):
             if isinstance(value, float) and not np.isnan(value):
-                if fmt == ".2f" or fmt == ".3f":
-                    display = f"{value:{fmt}}"
-                else:
-                    display = f"{value:{fmt}}"
-                cls = ""
+                display = f"{value:{fmt}}"
                 if positive_good:
                     cls = "positive" if value > 0 else "negative"
                 else:
@@ -930,7 +945,6 @@ with tab_bench:
         leg = ax.legend(fontsize=10, loc=legend_loc, framealpha=legendalpha)
         for text in leg.get_texts():
             text.set_alpha(legendalpha)
-        xlim = max(abs(b_ret.values).max() * 100, 1)
         ax.set_xlim(-xlim, xlim)
         ax.set_ylim(-xlim, xlim)
         pct_axis(ax, decimals=1)
@@ -1052,18 +1066,11 @@ with tab_alloc:
 
         col1, col2 = st.columns(2)
 
-        # Use global color helpers defined above
-        def get_group_color(label):
-            return _get_group_color(label)
-
-        def get_ticker_colors(ticker_list, asset_classes_dict, sizes):
-            return get_ticker_colors_global(ticker_list, asset_classes_dict, sizes)
-
         # draw_pie is defined globally above
 
         with col1:
             # Ticker pie
-            ticker_colors = get_ticker_colors(tickers, asset_classes, weights_raw)
+            ticker_colors = get_ticker_colors_global(tickers, asset_classes, weights_raw)
             fig, ax = plt.subplots(figsize=(6, 5))
             fig.patch.set_facecolor(PLOT_BG)
             draw_pie(ax, weights_raw, tickers, ticker_colors, "By Ticker")
@@ -1081,7 +1088,7 @@ with tab_alloc:
             if class_weights:
                 labels_ac = list(class_weights.keys())
                 sizes_ac  = list(class_weights.values())
-                ac_colors = [get_group_color(l) for l in labels_ac]
+                ac_colors = [_get_group_color(l) for l in labels_ac]
                 fig, ax = plt.subplots(figsize=(6, 5))
                 fig.patch.set_facecolor(PLOT_BG)
                 draw_pie(ax, sizes_ac, labels_ac, ac_colors, "By Asset Class")
@@ -1120,11 +1127,6 @@ with tab_alloc:
 # TAB 6 – CORRELATIONS
 # ══════════════════════════════════════════════════════════════════════════════
 with tab_corr:
-
-        coolwarm_colors = plt.cm.coolwarm(np.linspace(0, 1, 256))
-        white = np.array([[1, 1, 1, 1]])  # RGBA valkoinen
-        extended_colors = np.vstack([coolwarm_colors, white])
-        custom_cmap = LinearSegmentedColormap.from_list("coolwarm_white", extended_colors)
 
         @st.fragment
         def render_correlations():
@@ -1192,12 +1194,11 @@ with tab_corr:
                                 linewidth=2, color=color_cycle[i % len(color_cycle)])
 
                     # MARGINAALIEN KORJAUS:
-                    # Vasen reuna ensimmäiseen laskettuun korrelaatioon, oikealle 2 %
-                    if first_valid_date:
+                    # Vasen reuna ensimmäiseen laskettuun korrelaatioon
+                    if first_valid_date and pd.notnull(first_valid_date):
                         date_max = monthly_r.index.max()
-                        date_range = date_max - first_valid_date
-                        ax.set_xlim(left=first_valid_date, 
-                                    right=date_max)
+                        if pd.notnull(date_max) and date_max > first_valid_date:
+                            ax.set_xlim(left=first_valid_date, right=date_max)
 
                     ax.axhline(0,  color='#555', linewidth=0.5)
                     ax.axhline(1,  color='#333', linewidth=0.5, linestyle='--')
@@ -1275,9 +1276,6 @@ with tab_fi:
             withdrawal_start_mo  = total_months if no_withdrawals else withdrawal_start_year * 12
             proj_dates           = pd.date_range(datetime.today(), periods=total_months + 1, freq='MS')
 
-            # ── Current portfolio value: initial_investment grown through history ──
-            current_portfolio_value = (1 + p_ret).cumprod().iloc[-1] * initial_investment_native
-
             # ── Helper: simulate one full path with two phases ──────────────────
             def simulate(annual_spend_k, deterministic=True, sig_m=0.0):
                 """
@@ -1325,8 +1323,7 @@ with tab_fi:
             def fmt_dollars(value_k):
                 return fmt_dollar(value_k * 1000)
 
-            def _yaxis_fmt(x, pos):
-                return fmt_dollars(x)
+            fi_dollar_fmt = mticker.FuncFormatter(lambda x, _: fmt_dollars(x))
 
             # Pre-simulate all scenarios to determine Y axis range from data only
             all_sim_data = {}
@@ -1395,7 +1392,7 @@ with tab_fi:
                                 alpha=0.5, label=legend_label)
 
             ax.axhline(0, color='white', linewidth=0.6, alpha=0.3)
-            ax.yaxis.set_major_formatter(mticker.FuncFormatter(_yaxis_fmt))
+            ax.yaxis.set_major_formatter(fi_dollar_fmt)
             ax.set_ylabel("Net Worth")
             ax.set_title(
                 f"FI Forecast - {return_label} return  |  "
@@ -1513,8 +1510,7 @@ with tab_fi:
                 f"Portfolio survives in {surviving:.0f}% of scenarios"
             )
             ax.legend(fontsize=9)
-            dollar_axis_k = mticker.FuncFormatter(lambda x, _: fmt_dollars(x))
-            ax.yaxis.set_major_formatter(dollar_axis_k)
+            ax.yaxis.set_major_formatter(fi_dollar_fmt)
 
             ax.margins(x=0.0015)
             apply_style(fig, [ax])

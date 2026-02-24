@@ -8,3 +8,5 @@ quantstats
 seaborn
 plotly
 scipy
+jupyter
+ipykernel
