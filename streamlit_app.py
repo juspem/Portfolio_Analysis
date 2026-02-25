@@ -340,7 +340,7 @@ with st.sidebar:
         data=config_json_bytes,
         file_name=_dl_name,
         mime="application/json",
-        use_container_width=True,
+        width='stretch',
     )
 
     # ── Upload any .json config file ──────────────────────────────────────────
@@ -369,7 +369,7 @@ with st.sidebar:
 
     # ── Reset: delete the active config file ──────────────────────────────────
     if _active_config_file and os.path.exists(_active_config_file):
-        if st.button("Reset to defaults", use_container_width=True):
+        if st.button("Reset to defaults", width='stretch'):
             os.remove(_active_config_file)
             st.rerun()
 
@@ -820,7 +820,7 @@ with tab_risk:
                 f"{sortino(b_ret):.3f}",
             ],
         })
-        st.dataframe(risk_df, use_container_width=True, hide_index=True)
+        st.dataframe(risk_df, width='stretch', hide_index=True)
 
         # Drawdown chart
         st.markdown('<div class="section-header">Drawdown</div>', unsafe_allow_html=True)
@@ -909,7 +909,7 @@ with tab_bench:
                 "1.000", "0.00%", "0.00%", "———", "100.0%", "100.0%", "1.000",
             ],
         })
-        st.dataframe(bench_metrics, use_container_width=True, hide_index=True)
+        st.dataframe(bench_metrics, width='stretch', hide_index=True)
 
         # Cumulative comparison
         fig, ax = plt.subplots(figsize=(12, 4))
@@ -1543,7 +1543,7 @@ with tab_alloc:
             "Weight":       [f"{w:.2%}" for w in weights_raw],
             "Asset Class":  [asset_classes.get(t, "———") for t in tickers],
         })
-        st.dataframe(holdings_df, use_container_width=True, hide_index=True)
+        st.dataframe(holdings_df, width='stretch', hide_index=True)
 
         st.markdown('<div class="section-header">Individual Asset Performance</div>', unsafe_allow_html=True)
         ind_rows = []
@@ -1559,7 +1559,7 @@ with tab_alloc:
                 "Max DD":        f"{max_drawdown(r):.2%}",
             })
         if ind_rows:
-            st.dataframe(pd.DataFrame(ind_rows), use_container_width=True, hide_index=True)
+            st.dataframe(pd.DataFrame(ind_rows), width='stretch', hide_index=True)
 
     # ── Subtab 2: Country Distribution ───────────────────────────────────────
     with dist_subtabs[1]:
@@ -1595,10 +1595,10 @@ with tab_alloc:
                 main_c = main_c.sort_values(ascending=False)
 
             # Choropleth map
-            st.plotly_chart(_plotly_choropleth(main_c), use_container_width=True, key="country_map_unique")
+            st.plotly_chart(_plotly_choropleth(main_c), width='stretch', key="country_map_unique")
 
             # Bar
-            st.plotly_chart(_plotly_country_bar(main_c), use_container_width=True, key="country_bar_unique")
+            st.plotly_chart(_plotly_country_bar(main_c), width='stretch', key="country_bar_unique")
 
 
     # ── Subtab 3: Sector Distribution ─────────────────────────────────────────
@@ -1622,12 +1622,12 @@ with tab_alloc:
             # Bar + Sunburst side by side
             s_bar, s_sun = st.columns([3, 2])
             with s_bar:
-                st.plotly_chart(_plotly_sector_bar(main_s), use_container_width=True, key="sector_bar_unique")
+                st.plotly_chart(_plotly_sector_bar(main_s), width='stretch', key="sector_bar_unique")
             with s_sun:
                 _ticker_weights_map = dict(zip(available, list(w_aligned)))
                 st.plotly_chart(
                     _plotly_sector_sunburst(main_s, sector_per_ticker, _ticker_weights_map),
-                    use_container_width=True, key="sector_sunburst_unique",
+                    width='stretch', key="sector_sunburst_unique",
                 )
 
             st.markdown('<div class="section-header">Sector Weights Table</div>', unsafe_allow_html=True)
@@ -1640,7 +1640,7 @@ with tab_alloc:
                 detail  = sector_per_ticker.get(t, {})
                 total_t = sum(detail.values()) or 1
                 tbl[t]  = [f"{detail.get(s, 0) / total_t * 100:.1f}%" for s in all_sectors]
-            st.dataframe(pd.DataFrame(tbl), use_container_width=True, hide_index=True)
+            st.dataframe(pd.DataFrame(tbl), width='stretch', hide_index=True)
 
     # __ Subtab 4: Ticker Database ______________________________________________
     with dist_subtabs[3]:
@@ -1742,7 +1742,7 @@ with tab_alloc:
                     _cty_df = st.data_editor(
                         _build_initial_df(_t, "countries"),
                         num_rows="dynamic",
-                        use_container_width=True,
+                        width='stretch',
                         key=f"etf_cty_{_tkey}",
                         column_config={
                             "Country":  st.column_config.TextColumn("Country", width="medium"),
@@ -1756,7 +1756,7 @@ with tab_alloc:
                     _sec_df = st.data_editor(
                         _build_initial_df(_t, "sectors"),
                         num_rows="dynamic",
-                        use_container_width=True,
+                        width='stretch',
                         key=f"etf_sec_{_tkey}",
                         column_config={
                             "Sector":   st.column_config.SelectboxColumn("Sector", options=_SECTOR_OPTIONS, width="medium"),
@@ -2135,7 +2135,7 @@ with tab_fi:
                     "Portfolio lasts":       longevity,
                 })
 
-            st.dataframe(pd.DataFrame(fi_rows), use_container_width=True, hide_index=True)
+            st.dataframe(pd.DataFrame(fi_rows), width='stretch', hide_index=True)
 
             if not has_swr:
                 st.info("Set Safe Withdrawal Rate > 0 in the sidebar to see FI target NW calculations and years-to-FI.")
@@ -2299,7 +2299,7 @@ with tab_opt:
                     }
                     for t, w in zip(available, _w_sh)
                 ])
-                st.dataframe(_w_df_sh, use_container_width=True, hide_index=True)
+                st.dataframe(_w_df_sh, width='stretch', hide_index=True)
 
                 _pc1, _pc2 = st.columns(2)
                 _sizes_cur  = [_cur_w_dict.get(t, 0) for t in available]
@@ -2336,7 +2336,7 @@ with tab_opt:
                     }
                     for t, w in zip(available, _w_mv)
                 ])
-                st.dataframe(_w_df_mv, use_container_width=True, hide_index=True)
+                st.dataframe(_w_df_mv, width='stretch', hide_index=True)
 
                 _pc3, _pc4 = st.columns(2)
                 with _pc3:
@@ -2450,7 +2450,7 @@ with tab_opt:
                     legend=dict(bgcolor=PLOT_BG, bordercolor="#2a2a2a"),
                     height=650,
                 )
-                st.plotly_chart(_fig3d, use_container_width=True)
+                st.plotly_chart(_fig3d, width='stretch')
                 st.caption("X = volatility, Y = return, Z = Sharpe ratio. Drag to rotate, scroll to zoom.")
 
 
@@ -2488,7 +2488,7 @@ with tab_report:
         }
 
         report_df = pd.DataFrame(list(all_metrics.items()), columns=["Metric", "Value"])
-        st.dataframe(report_df, use_container_width=True, hide_index=True)
+        st.dataframe(report_df, width='stretch', hide_index=True)
 
         # Download CSV
         csv = report_df.to_csv(index=False).encode()
