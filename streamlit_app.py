@@ -230,6 +230,12 @@ div[data-testid="stColumn"] button:has(strong):hover {{
     border-color: {ACCENT2} !important;
 }}
 
+/* Remove rounded corners from chart containers */
+[data-testid="stImage"] img,
+[data-testid="stPlotlyChart"] > div,
+[data-testid="element-container"] iframe {{
+    border-radius: 0 !important;
+}}
 </style>
 """, unsafe_allow_html=True)
 
@@ -575,6 +581,7 @@ def down_capture(p, b):
 
 
 # ── Compute all metrics ────────────────────────────────────────────────────────
+_corr_coef = float(np.corrcoef(p_ret, b_ret)[0, 1])
 m = {
     "Annual Return":       ann_return(p_ret),
     "Annual Volatility":   ann_vol(p_ret),
@@ -596,6 +603,10 @@ m = {
     "Bench Max Drawdown":  max_drawdown(b_ret),
 }
 
+
+# ── Pre-computed cumulative series (reused in Overview, Risk, Benchmark tabs) ──
+cum_p = (1 + p_ret).cumprod() * initial_investment_native
+cum_b = (1 + b_ret).cumprod() * initial_investment_native
 
 # ── Tabs ──────────────────────────────────────────────────────────────────────
 _TAB_NAMES = ["Overview", "Performance", "Risk", "Benchmark", "Distribution",
@@ -687,8 +698,6 @@ with tab_overview:
         st.markdown('<div class="section-header">Cumulative Growth</div>', unsafe_allow_html=True)
 
         fig, ax = plt.subplots(figsize=(12, 4))
-        cum_p = (1 + p_ret).cumprod() * initial_investment_native
-        cum_b = (1 + b_ret).cumprod() * initial_investment_native
         ax.plot(cum_p.index, cum_p.values, color=ACCENT,  linewidth=2,   label="Portfolio")
         ax.plot(cum_b.index, cum_b.values, color=ACCENT3, linewidth=1.5, label=benchmark_ticker, alpha=0.7)
         ax.fill_between(cum_p.index, initial_investment_native, cum_p.values, alpha=0.1, color=ACCENT)
@@ -734,11 +743,13 @@ with tab_perf:
         pct_axis(axes[1], decimals=0)
 
         # 3. Rolling 30-day volatility
-        roll_vol = p_ret.rolling(30).std() * np.sqrt(252) * 100
+        roll_vol        = p_ret.rolling(30).std() * np.sqrt(252) * 100
+        roll_vol_valid  = roll_vol.dropna()
         axes[2].plot(roll_vol.index, roll_vol.values, color=ACCENT4, linewidth=1.5)
         axes[2].fill_between(roll_vol.index, 0, roll_vol.values, alpha=0.2, color=ACCENT4)
-        axes[2].set_xlim(left=roll_vol.dropna().index.min() + ((roll_vol.dropna().index.max() - roll_vol.dropna().index.min()) * -0.001),
-                         right=roll_vol.dropna().index.max() + ((roll_vol.dropna().index.max() - roll_vol.dropna().index.min()) * 0.001))
+        _rv_min, _rv_max = roll_vol_valid.index.min(), roll_vol_valid.index.max()
+        axes[2].set_xlim(left=_rv_min + ((_rv_max - _rv_min) * -0.001),
+                         right=_rv_max + ((_rv_max - _rv_min) * 0.001))
         axes[2].set_ylabel("Annualized Vol")
         axes[2].set_title("30-Day Rolling Volatility")
         pct_axis(axes[2], decimals=1)
@@ -824,13 +835,13 @@ with tab_risk:
 
         # Drawdown chart
         st.markdown('<div class="section-header">Drawdown</div>', unsafe_allow_html=True)
-        cum   = (1 + p_ret).cumprod()
-        roll  = cum.cummax()
-        dd    = (cum - roll) / roll
+        _cum_p_dd = (1 + p_ret).cumprod()
+        roll      = _cum_p_dd.cummax()
+        dd        = (_cum_p_dd - roll) / roll
 
-        cum_b  = (1 + b_ret).cumprod()
-        roll_b = cum_b.cummax()
-        dd_b   = (cum_b - roll_b) / roll_b
+        _cum_b_dd = (1 + b_ret).cumprod()
+        roll_b    = _cum_b_dd.cummax()
+        dd_b      = (_cum_b_dd - roll_b) / roll_b
 
         fig, ax = plt.subplots(figsize=(12, 4))
         ax.fill_between(dd.index,   dd.values   * 100, 0, color=ACCENT2, alpha=0.6, label="Portfolio")
@@ -899,7 +910,7 @@ with tab_bench:
                 f"{m['Information Ratio']:.3f}",
                 f"{m['Up Capture']:.1f}%",
                 f"{m['Down Capture']:.1f}%",
-                f"{np.corrcoef(p_ret, b_ret)[0,1]:.3f}",
+                f"{_corr_coef:.3f}",
             ],
             f"Benchmark ({benchmark_ticker})": [
                 f"{m['Bench Annual Return']:.2%}",
@@ -913,8 +924,6 @@ with tab_bench:
 
         # Cumulative comparison
         fig, ax = plt.subplots(figsize=(12, 4))
-        cum_p = (1 + p_ret).cumprod() * initial_investment_native
-        cum_b = (1 + b_ret).cumprod() * initial_investment_native
         ax.plot(cum_p.index, cum_p.values, color=ACCENT,  linewidth=2,   label="Portfolio")
         ax.plot(cum_b.index, cum_b.values, color=ACCENT3, linewidth=1.5, label=benchmark_ticker, alpha=0.8)
         ax.set_xlim(left=cum_p.index.min(), 
@@ -956,42 +965,34 @@ with tab_bench:
 
         # Scatter
         st.markdown('<div class="section-header">Excess Returns Scatter</div>', unsafe_allow_html=True)
-        legendalpha=0.6
-        regressionalpha=0.4
-        linealpha=0.5
-        dotalpha=0.5
-        linecolor='#505050'
-        sc_size = 7
-        sc_pos  = "Left"
-        fig, ax = plt.subplots(figsize=(sc_size, sc_size))
+        _sc_size = 7
+        fig, ax = plt.subplots(figsize=(_sc_size, _sc_size))
         ax.scatter(b_ret.values * 100, p_ret.values * 100,
-                   color=ACCENT, alpha=dotalpha, s=4, linewidths=0)
+                   color=ACCENT, alpha=0.5, s=4, linewidths=0)
         xlim = max(abs(b_ret.values).max() * 100, 1)
         x_line = np.linspace(-xlim, xlim, 100)
         b_val  = m["Beta"]
         a_val  = m["Alpha (Jensen)"] / 252
         ax.plot(x_line, b_val * x_line + a_val * 100, color=ACCENT2, linewidth=1.5,
-                label=f"Regression (β={b_val:.2f})", alpha=regressionalpha)
-        ax.axhline(0, color=linecolor, linewidth=1, alpha=linealpha)
-        ax.axvline(0, color=linecolor, linewidth=1, alpha=linealpha)
+                label=f"Regression (β={b_val:.2f})", alpha=0.4)
+        ax.axhline(0, color='#505050', linewidth=1, alpha=0.5)
+        ax.axvline(0, color='#505050', linewidth=1, alpha=0.5)
         ax.set_xlabel(f"{benchmark_ticker} Daily Return (%)")
         ax.set_ylabel("Portfolio Daily Return")
         ax.set_title("Portfolio vs Benchmark")
         legend_loc = "upper left" if b_val >= 0 else "upper right"
-        leg = ax.legend(fontsize=10, loc=legend_loc, framealpha=legendalpha)
+        leg = ax.legend(fontsize=10, loc=legend_loc, framealpha=0.6)
         for text in leg.get_texts():
-            text.set_alpha(legendalpha)
+            text.set_alpha(0.6)
         ax.set_xlim(-xlim, xlim)
         ax.set_ylim(-xlim, xlim)
         pct_axis(ax, decimals=1)
         ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"{x:.1f}%"))
         apply_style(fig, [ax])
-        ax.grid(True, color=linecolor, linewidth=0.5, alpha=linealpha)
+        ax.grid(True, color='#505050', linewidth=0.5, alpha=0.5)
         fig.tight_layout()
-        sc_gap = max(1, 12 - sc_size)
-        if   sc_pos == "Left":   _cols = st.columns([sc_size, sc_gap]);              _col = _cols[0]
-        elif sc_pos == "Right":  _cols = st.columns([sc_gap, sc_size]);              _col = _cols[1]
-        else:                     _cols = st.columns([sc_gap//2, sc_size, sc_gap//2]); _col = _cols[1]
+        _sc_gap = max(1, 12 - _sc_size)
+        _col = st.columns([_sc_size, _sc_gap])[0]
         with _col: st.pyplot(fig, use_container_width=False)
         plt.close()
 
@@ -1806,7 +1807,6 @@ with tab_corr:
         def render_correlations():
             st.markdown('<div class="section-header">Correlation Matrix</div>', unsafe_allow_html=True)
             cm_size = max(7, len(tickers))  # chart size in inches (square)
-            cm_pos  = "Left"              # ← sijainti: "Left" / "Center" / "Right"
 
             custom_cmap = LinearSegmentedColormap.from_list(
                 "coolwarm_white",
@@ -1836,10 +1836,8 @@ with tab_corr:
             ax.set_ylabel("")
             apply_style(fig, [ax])
             fig.tight_layout()
-            cm_gap = max(1, 12 - cm_size)
-            if   cm_pos == "Left":   _cols = st.columns([cm_size, cm_gap]);               _col = _cols[0]
-            elif cm_pos == "Right":  _cols = st.columns([cm_gap, cm_size]);               _col = _cols[1]
-            else:                     _cols = st.columns([cm_gap//2, cm_size, cm_gap//2]); _col = _cols[1]
+            _cm_gap = max(1, 12 - cm_size)
+            _col = st.columns([cm_size, _cm_gap])[0]
             with _col: st.pyplot(fig, use_container_width=False)
             plt.close()
 
@@ -1995,11 +1993,8 @@ with tab_fi:
                 ax.axvspan(acc_end_date, proj_dates[-1], alpha=0.04, color=ACCENT2, zorder=0)
                 ax.axvline(acc_end_date, color="white", linewidth=1.2, linestyle=':', alpha=0.6)
 
-            # ── Dollar formatter for $k values (wraps global fmt_dollar) ────────
-            def fmt_dollars(value_k):
-                return fmt_dollar(value_k * 1000)
-
-            fi_dollar_fmt = mticker.FuncFormatter(lambda x, _: fmt_dollars(x))
+            # Axis formatter: values are in $k, display as fmt_dollar units
+            fi_dollar_fmt = mticker.FuncFormatter(lambda x, _: fmt_dollar(x * 1000))
 
             # Pre-simulate all scenarios to determine Y axis range from data only
             all_sim_data = {}
@@ -2050,7 +2045,7 @@ with tab_fi:
                 # FI required NW target line (only if SWR set)
                 if has_swr:
                     target = spend_k / safe_withdrawal_rate
-                    legend_label = f"{label} target: {fmt_dollars(target)}"
+                    legend_label = f"{label} target: {fmt_dollar((target) * 1000)}"
                     if target <= y_top:
                         # Target is within chart range - draw horizontal line
                         ax.axhline(target, color=color, linewidth=0.8, linestyle=':',
@@ -2111,7 +2106,7 @@ with tab_fi:
                     acc_series  = series.iloc[:withdrawal_start_mo + 1]
                     cross       = acc_series[acc_series >= target]
                     yrs_to_fi   = (cross.index[0] - datetime.today()).days / 365 if not cross.empty else None
-                    fi_target   = fmt_dollars(target)
+                    fi_target   = fmt_dollar((target) * 1000)
                     yrs_str     = f"{yrs_to_fi:.1f}" if yrs_to_fi else f">{withdrawal_start_year}"
                 else:
                     fi_target = "-"
@@ -2123,7 +2118,7 @@ with tab_fi:
                 if exhausted:
                     longevity = f"{exhausted[0] / 12:.0f} yrs (exhausted)"
                 else:
-                    longevity = f"{(total_horizon_years - withdrawal_start_year)}+ yrs ({fmt_dollars(vals[-1])} left)"
+                    longevity = f"{(total_horizon_years - withdrawal_start_year)}+ yrs ({fmt_dollar((vals[-1]) * 1000)} left)"
 
                 monthly_w = spend_k / 12
                 fi_rows.append({
@@ -2131,7 +2126,7 @@ with tab_fi:
                     "Annual Spend":          f"${spend_k}k  (${monthly_w:.1f}k/mo)",
                     "Required NW (SWR)":     fi_target,
                     "Years to FI target":    yrs_str,
-                    "NW at retirement":      fmt_dollars(nw_at_retirement),
+                    "NW at retirement":      fmt_dollar((nw_at_retirement) * 1000),
                     "Portfolio lasts":       longevity,
                 })
 
@@ -2195,9 +2190,9 @@ with tab_fi:
 
             st.caption(
                 f"At year {total_horizon_years} - "
-                f"Median: {fmt_dollars(p50[-1])}  |  "
-                f"10th pct: {fmt_dollars(p10[-1])}  |  "
-                f"90th pct: {fmt_dollars(p90[-1])}  |  "
+                f"Median: {fmt_dollar((p50[-1]) * 1000)}  |  "
+                f"10th pct: {fmt_dollar((p10[-1]) * 1000)}  |  "
+                f"90th pct: {fmt_dollar((p90[-1]) * 1000)}  |  "
                 f"Portfolio exhausted in {exhausted_paths:.0f}/{int(n_sim)} scenarios ({100-surviving:.0f}%)"
             )
 
@@ -2210,12 +2205,6 @@ gc.collect()
 # ══════════════════════════════════════════════════════════════════════════════
 with tab_opt:
         from scipy.optimize import minimize
-
-        st.markdown('<div class="section-header">Portfolio Optimization</div>', unsafe_allow_html=True)
-        st.caption(
-            "Modern Portfolio Theory (MPT) - finds the weight distribution that maximises "
-            "return relative to risk, or minimises volatility."
-        )
 
         if len(available) < 2:
             st.warning("Optimization requires at least 2 tickers.")
@@ -2275,6 +2264,9 @@ with tab_opt:
             # Current weights dict
             _cur_w_dict = {t: float(w) for t, w in zip(available, w_aligned)}
 
+            _sizes_cur  = [_cur_w_dict.get(t, 0) for t in available]
+            _opt_colors = get_ticker_colors_global(available, asset_classes, _sizes_cur)
+
             opt_subtabs = st.tabs([
                 "Max Sharpe",
                 "Min Volatility",
@@ -2302,8 +2294,6 @@ with tab_opt:
                 st.dataframe(_w_df_sh, width='stretch', hide_index=True)
 
                 _pc1, _pc2 = st.columns(2)
-                _sizes_cur  = [_cur_w_dict.get(t, 0) for t in available]
-                _opt_colors = get_ticker_colors_global(available, asset_classes, _sizes_cur)
                 with _pc1:
                     fig, ax = plt.subplots(figsize=(6, 5))
                     fig.patch.set_facecolor(PLOT_BG)
@@ -2475,8 +2465,8 @@ with tab_report:
             "Information Ratio":         f"{m['Information Ratio']:.4f}",
             "Up Capture":                f"{m['Up Capture']:.2f}%",
             "Down Capture":              f"{m['Down Capture']:.2f}%",
-            "Correlation to Benchmark":  f"{np.corrcoef(p_ret, b_ret)[0,1]:.4f}",
-            "R-Squared":                 f"{np.corrcoef(p_ret, b_ret)[0,1]**2:.4f}",
+            "Correlation to Benchmark":  f"{_corr_coef:.4f}",
+            "R-Squared":                 f"{_corr_coef**2:.4f}",
             "Benchmark Annual Return":   f"{m['Bench Annual Return']:.4%}",
             "Benchmark Volatility":      f"{m['Bench Volatility']:.4%}",
             "Benchmark Sharpe":          f"{m['Bench Sharpe']:.4f}",
