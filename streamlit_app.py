@@ -338,6 +338,7 @@ with st.sidebar:
         "safe_withdrawal_rate":    safe_withdrawal_rate,
         "purchase_currency":       purchase_currency,
         "display_currency":        display_currency,
+        "etf_custom_db":           st.session_state.get("etf_custom_db", {}),
     }
     _dl_name = os.path.basename(_active_config_file) if _active_config_file else "portfolio.json"
     config_json_bytes = json.dumps(current_config, indent=2, ensure_ascii=False).encode('utf-8')
@@ -1144,14 +1145,23 @@ _KNOWN_ETF_COUNTRIES = {
         "Spain":0.007,"Italy":0.006,"Singapore":0.004,"Finland":0.003,
         "Belgium":0.003,"Norway":0.002,"Israel":0.004,"New Zealand":0.002,
     },
-    # MSCI World Infrastructure
+    # MSCI World Infrastructure Sector Capped Index
+    # Source: MSCI Index Factsheet, Jan 30, 2026
     "MSCI_INFRA": {
-        "United States":0.40,"Canada":0.10,"Australia":0.08,"United Kingdom":0.08,
-        "France":0.07,"Italy":0.06,"Spain":0.05,"Japan":0.04,"Hong Kong":0.03,
-        "Germany":0.02,"China":0.02,"Netherlands":0.02,"Other":0.03,
+        "United States":0.5395,"Canada":0.123,"Japan":0.076,"Spain":0.049,
+        "Germany":0.045,"United Kingdom":0.035,"Australia":0.030,
+        "France":0.025,"Italy":0.020,"Netherlands":0.015,"Other":0.043,
+    },
+    # Franklin FTSE India / MSCI India — 100% India
+    "FTSE_INDIA": {
+        "India":1.00,
     },
     # S&P 500
     "SP500": {
+        "United States":1.00,
+    },
+    # S&P 500 Paris Aligned Climate (FLX5) — 100% USA, same as SP500
+    "SP500_PARIS": {
         "United States":1.00,
     },
     # MSCI Emerging Markets
@@ -1209,15 +1219,34 @@ _KNOWN_ETF_SECTORS = {
         "Communication Services":0.08,"Consumer Staples":0.07,
         "Energy":0.05,"Materials":0.04,"Real Estate":0.02,"Utilities":0.02,
     },
+    # MSCI World Infrastructure Sector Capped Index
+    # Source: MSCI Index Factsheet, Jan 30, 2026
     "MSCI_INFRA": {
-        "Utilities":0.35,"Industrials":0.30,"Energy":0.15,
-        "Real Estate":0.10,"Communication Services":0.08,"Financials":0.02,
+        "Communication Services":0.329,"Utilities":0.326,"Energy":0.254,
+        "Health Care":0.048,"Industrials":0.038,"Other":0.004,
+    },
+    # Franklin FTSE India / MSCI India
+    # Source: Yahoo Finance FLXI.DE, Feb 2025
+    "FTSE_INDIA": {
+        "Financials":0.2801,"Consumer Discretionary":0.1229,"Information Technology":0.1028,
+        "Energy":0.0950,"Industrials":0.0913,"Materials":0.0870,
+        "Health Care":0.0600,"Consumer Staples":0.0572,
+        "Communication Services":0.0487,"Utilities":0.0415,"Real Estate":0.0134,
     },
     "SP500": {
         "Information Technology":0.29,"Financials":0.13,"Health Care":0.13,
         "Consumer Discretionary":0.10,"Industrials":0.09,
         "Communication Services":0.09,"Consumer Staples":0.06,
         "Energy":0.04,"Materials":0.02,"Real Estate":0.02,"Utilities":0.02,
+    },
+    # S&P 500 Paris Aligned Climate — heavy tech tilt, zero energy
+    # Source: Yahoo Finance FLX5.DE
+    "SP500_PARIS": {
+        "Information Technology":0.389,"Financials":0.142,
+        "Consumer Discretionary":0.110,"Communication Services":0.105,
+        "Health Care":0.102,"Consumer Staples":0.054,
+        "Industrials":0.052,"Real Estate":0.022,
+        "Materials":0.016,"Utilities":0.009,"Energy":0.000,
     },
     "MSCI_EM": {
         "Information Technology":0.22,"Financials":0.22,"Consumer Discretionary":0.13,
@@ -1259,10 +1288,12 @@ _TICKER_TO_TEMPLATE = {
     "EUNL": "MSCI_WORLD", "EUNL.DE": "MSCI_WORLD",
     "LCWD": "MSCI_WORLD", "LCWD.L": "MSCI_WORLD",
     "VWCE": "MSCI_ACWI",  "VWCE.DE": "MSCI_ACWI",  "VWCE.L": "MSCI_ACWI",
-    # FLX5 = iShares Core MSCI World UCITS ETF (EUR Hedged) ≈ MSCI World
-    "FLX5": "MSCI_WORLD", "FLX5.DE": "MSCI_WORLD",
-    # FLXI = iShares MSCI World Infrastructure UCITS ETF
-    "FLXI": "MSCI_INFRA", "FLXI.DE": "MSCI_INFRA",
+    # FLX5 = Franklin S&P 500 Paris Aligned Climate UCITS ETF (100% USA, zero energy)
+    "FLX5": "SP500_PARIS", "FLX5.DE": "SP500_PARIS", "FLX5.L": "SP500_PARIS",
+    "FLX5.AS": "SP500_PARIS", "FLX5.SW": "SP500_PARIS", "FLX5.F": "SP500_PARIS",
+    # FLXI = Franklin FTSE India UCITS ETF (100% India)
+    "FLXI": "FTSE_INDIA", "FLXI.DE": "FTSE_INDIA", "FLXI.L": "FTSE_INDIA",
+    "FLXI.AS": "FTSE_INDIA", "FLXI.SW": "FTSE_INDIA", "FLXI.F": "FTSE_INDIA",
     # S&P 500
     "SPY": "SP500", "VOO": "SP500", "IVV": "SP500", "CSPX": "SP500",
     "CSPX.L": "SP500", "SXR8": "SP500", "SXR8.DE": "SP500",
@@ -1309,17 +1340,25 @@ def _normalise_sectors(d):
         out[canon] = out.get(canon, 0) + v
     return out
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, ttl=86400)
 def _get_etf_data_cached(ticker):
     """
-    Priority: yfinance sectorWeightings/countryWeightings → yfinance country/sector
-    → hardcoded built-in template.
+    Priority:
+    1. Hardcoded built-in template (if ticker is known) — always wins, guaranteed correct
+    2. yfinance sectorWeightings/countryWeightings — for unknown tickers only
     Does NOT check session_state overrides.
     """
+    # 1. Known ticker → use hardcoded template, skip yfinance entirely
+    tmpl = _TICKER_TO_TEMPLATE.get(ticker.upper())
+    if tmpl:
+        return (_KNOWN_ETF_COUNTRIES.get(tmpl, {}),
+                _KNOWN_ETF_SECTORS.get(tmpl, {}),
+                None, None)
+
+    # 2. Unknown ticker → try yfinance
     try:
         info    = yf.Ticker(ticker).info
         country = info.get("country")
-        # sector  = info.get("sector")
         sector  = None
         raw_sec = info.get("sectorWeightings") or []
         raw_cty = info.get("countryWeightings") or []
@@ -1335,12 +1374,7 @@ def _get_etf_data_cached(ticker):
             return cty_w, _normalise_sectors(sec_w), country, sector
     except Exception:
         pass
-    # Fallback: built-in template
-    tmpl = _TICKER_TO_TEMPLATE.get(ticker.upper())
-    if tmpl:
-        return (_KNOWN_ETF_COUNTRIES.get(tmpl, {}),
-                _KNOWN_ETF_SECTORS.get(tmpl, {}),
-                None, None)
+
     return {}, {}, None, None
 
 def _get_etf_data(ticker):
@@ -1653,13 +1687,14 @@ with tab_alloc:
         )
 
         if "etf_custom_db" not in st.session_state:
-            st.session_state["etf_custom_db"] = {}
+            # Load from config file if present, else empty dict
+            st.session_state["etf_custom_db"] = _cfg.get("etf_custom_db", {})
 
         _SECTOR_OPTIONS = [
             "Information Technology", "Financials", "Health Care",
             "Industrials", "Consumer Discretionary", "Consumer Staples",
             "Communication Services", "Energy", "Materials",
-            "Real Estate", "Utilities", "Government", "Other",
+            "Real Estate", "Utilities", "Government", "Currency", "Other",
         ]
 
         def _parse_weights(df, key_col):
@@ -1717,85 +1752,87 @@ with tab_alloc:
                 if k in st.session_state:
                     del st.session_state[k]
 
+        def _render_ticker_editor(ticker):
+            tkey = ticker.upper()
+
+            @st.fragment
+            def _fragment():
+                in_custom = tkey in st.session_state["etf_custom_db"]
+
+                st.markdown(
+                    f'<div class="section-header">{ticker}</div>',
+                    unsafe_allow_html=True,
+                )
+
+                ui_top    = st.container()
+                ui_tables = st.container()
+
+                with ui_tables:
+                    col_cty, col_sec = st.columns(2)
+
+                    with col_cty:
+                        st.caption("Country weights")
+                        cty_df = st.data_editor(
+                            _build_initial_df(ticker, "countries"),
+                            num_rows="dynamic",
+                            width='stretch',
+                            key=f"etf_cty_{tkey}",
+                            column_config={
+                                "Country":  st.column_config.TextColumn("Country", width="medium"),
+                                "Weight %": st.column_config.NumberColumn("Weight %", min_value=0.0, max_value=100.0, step=0.1, format="%.1f"),
+                            },
+                            hide_index=True,
+                        )
+
+                    with col_sec:
+                        st.caption("Sector weights")
+                        sec_df = st.data_editor(
+                            _build_initial_df(ticker, "sectors"),
+                            num_rows="dynamic",
+                            width='stretch',
+                            key=f"etf_sec_{tkey}",
+                            column_config={
+                                "Sector":   st.column_config.SelectboxColumn("Sector", options=_SECTOR_OPTIONS, width="medium"),
+                                "Weight %": st.column_config.NumberColumn("Weight %", min_value=0.0, max_value=100.0, step=0.1, format="%.1f"),
+                            },
+                            hide_index=True,
+                        )
+
+                with ui_top:
+                    btn_col, _gap_col, clr_col = st.columns([1.5, 7, 1.5])
+                    with btn_col:
+                        if st.button(f"Save {ticker}", key=f"etf_save_{tkey}", width=200, type="primary"):
+                            cty_parsed = _parse_weights(cty_df, "Country")
+                            sec_parsed = _parse_weights(sec_df, "Sector")
+                            if not cty_parsed and not sec_parsed:
+                                st.error(f"{ticker}: enter at least one country or sector weight.")
+                            else:
+                                entry = {}
+                                if cty_parsed:
+                                    entry["countries"] = cty_parsed
+                                if sec_parsed:
+                                    entry["sectors"] = _normalise_sectors(sec_parsed)
+                                st.session_state["etf_custom_db"][tkey] = entry
+                                _reset_editor_cache(ticker)
+                                for ek in (f"etf_cty_{tkey}", f"etf_sec_{tkey}"):
+                                    if ek in st.session_state:
+                                        del st.session_state[ek]
+                                st.rerun(scope="app")
+                    with clr_col:
+                        if st.button(f"Clear {ticker}", key=f"etf_clr_{tkey}", width=200, disabled=not in_custom):
+                            del st.session_state["etf_custom_db"][tkey]
+                            _reset_editor_cache(ticker)
+                            for ek in (f"etf_cty_{tkey}", f"etf_sec_{tkey}"):
+                                if ek in st.session_state:
+                                    del st.session_state[ek]
+                            st.rerun(scope="app")
+
+                st.write("---")
+
+            _fragment()
+
         for _t in available:
-            _tkey = _t.upper()
-            _in_custom   = _tkey in st.session_state["etf_custom_db"]
-            _cached_data = _get_etf_data_cached(_t)
-            _has_data    = _cached_data != ({}, {}, None, None)
-            _source_label = "" # source label placeholder
-
-            st.markdown(
-                f'<div class="section-header">{_t}'
-                f'<span style="font-size:0.7rem;color:#888;font-weight:400;letter-spacing:0">'
-                f'&ensp;{_source_label}</span></div>',
-                unsafe_allow_html=True,
-            )
-
-            # 1. Create empty containers for visual ordering
-            ui_top = st.container()
-            ui_tables = st.container()
-
-            # 2. Render tables first in code (but place them in the lower container)
-            with ui_tables:
-                _col_cty, _col_sec = st.columns(2)
-
-                with _col_cty:
-                    st.caption("Country weights")
-                    _cty_df = st.data_editor(
-                        _build_initial_df(_t, "countries"),
-                        num_rows="dynamic",
-                        width='stretch',
-                        key=f"etf_cty_{_tkey}",
-                        column_config={
-                            "Country":  st.column_config.TextColumn("Country", width="medium"),
-                            "Weight %": st.column_config.NumberColumn("Weight %", min_value=0.0, max_value=100.0, step=0.1, format="%.1f"),
-                        },
-                        hide_index=True,
-                    )
-
-                with _col_sec:
-                    st.caption("Sector weights")
-                    _sec_df = st.data_editor(
-                        _build_initial_df(_t, "sectors"),
-                        num_rows="dynamic",
-                        width='stretch',
-                        key=f"etf_sec_{_tkey}",
-                        column_config={
-                            "Sector":   st.column_config.SelectboxColumn("Sector", options=_SECTOR_OPTIONS, width="medium"),
-                            "Weight %": st.column_config.NumberColumn("Weight %", min_value=0.0, max_value=100.0, step=0.1, format="%.1f"),
-                        },
-                        hide_index=True,
-                    )
-
-            # 3. Render button logic after tables (but place buttons in the upper container)
-            with ui_top:
-                _btn_col, _gap_col, _clr_col = st.columns([1.5, 7, 1.5])
-                with _btn_col:
-                    if st.button(f"Save {_t}", key=f"etf_save_{_tkey}", width=200, type="primary"):
-                        _cty_parsed = _parse_weights(_cty_df, "Country")
-                        _sec_parsed = _parse_weights(_sec_df, "Sector")
-                        if not _cty_parsed and not _sec_parsed:
-                            st.error(f"{_t}: enter at least one country or sector weight.")
-                        else:
-                            st.session_state["etf_custom_db"][_tkey] = {
-                                "countries": _cty_parsed,
-                                "sectors":   _normalise_sectors(_sec_parsed),
-                            }
-                            _reset_editor_cache(_t)
-                            for _ek in (f"etf_cty_{_tkey}", f"etf_sec_{_tkey}"):
-                                if _ek in st.session_state:
-                                    del st.session_state[_ek]
-                            st.rerun()
-                with _clr_col:
-                    if st.button(f"Clear {_t}", key=f"etf_clr_{_tkey}", width=200, disabled=not _in_custom):
-                        del st.session_state["etf_custom_db"][_tkey]
-                        _reset_editor_cache(_t)
-                        for _ek in (f"etf_cty_{_tkey}", f"etf_sec_{_tkey}"):
-                            if _ek in st.session_state:
-                                del st.session_state[_ek]
-                        st.rerun()
-                            
-            st.write("---") # Divider between tickers
+            _render_ticker_editor(_t)
 
 gc.collect()
 
