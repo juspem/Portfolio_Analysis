@@ -23,7 +23,7 @@ warnings.filterwarnings('ignore')
 import my_portfolio as _p
 import json
 
-# 1. Luodaan istunto, joka näyttää tavalliselta selaimelta
+# 1. Create a session that looks like a regular browser
 @st.cache_resource
 def get_session():
     session = requests.Session()
@@ -32,7 +32,7 @@ def get_session():
     })
     return session
 
-# 2. Luodaan funktio, joka lataa datan ja tallentaa sen välimuistiin (esim. 1 tunniksi)
+# 2. Create a function that loads data and caches it (e.g. for 1 hour)
 @st.cache_data(ttl=3600)
 def download_data(tickers, start, end):
     try:
@@ -42,7 +42,7 @@ def download_data(tickers, start, end):
             return None
         return data
     except Exception as e:
-        st.error(f"Datan lataus epäonnistui: {e}")
+        st.error(f"Data loading failed: {e}")
         return None
 
 # ── Load user config (overrides my_portfolio.py without touching it) ──────────
@@ -210,14 +210,14 @@ div[data-testid="stMetric"] {{
     font-family: 'IBM Plex Mono', monospace;
     font-size: 0.8rem;
 }}
-/* Etsitään painike (button), jonka sisällä on lihavoitu (strong) teksti */
+/* Target buttons that contain bold (strong) text */
 div[data-testid="stColumn"] button:has(strong) {{
-    background-color: {ACCENT2} !important; /* Streamlitin punainen tai oma värisi */
+    background-color: {ACCENT2} !important; /* Streamlit red or your custom color */
     border-color: {ACCENT2} !important;
     color: {PLOT_FG} !important;
 }}
 
-/* Tyyli lihavoidulle tekstille napin sisällä (koko ja paksuus) */
+/* Style for bold text inside the button (size and weight) */
 div[data-testid="stColumn"] button strong {{
     font-weight: 900 !important;
     font-size: 1.2rem !important;
@@ -1127,6 +1127,7 @@ SECTOR_COLORS = {
     "Real Estate": "#ffa94d",            "Realestate": "#ffa94d",
     "Communication Services": "#b19cd9", "Communication": "#b19cd9",
     "Utilities": "#f1c40f",
+    "Cash": "#85bb65", "Currency": "#85bb65",
     "Other": "#444444",
 }
 
@@ -1296,6 +1297,7 @@ _SECTOR_NORM = {
     "Consumer Cyclical": "Consumer Discretionary",
     "Consumer Defensive": "Consumer Staples",
     "Basic Materials": "Materials",
+    "Cash":"Currency",
 }
 
 def _normalise_sectors(d):
@@ -1342,7 +1344,7 @@ def _get_etf_data_cached(ticker):
 def _get_etf_data(ticker):
     """
     Returns (country_weights_dict, sector_weights_dict, home_country, home_sector).
-    Priority: ETF Database (user-saved) → yfinance → built-in template.
+    Priority: Ticker Database (user-saved) → yfinance → built-in template.
     """
     key = ticker.upper()
     custom = st.session_state.get("etf_custom_db", {})
@@ -1505,7 +1507,7 @@ def _plotly_sector_sunburst(series, ticker_detail, ticker_weights):
     return fig
 
 with tab_alloc:
-    dist_subtabs = st.tabs(["Allocations", "Country Distribution", "Sector Distribution", "ETF Database"])
+    dist_subtabs = st.tabs(["Allocations", "Country Distribution", "Sector Distribution", "Ticker Database"])
 
     # ── Subtab 1: Allocations ────────────────────────────────────────────────
     with dist_subtabs[0]:
@@ -1572,21 +1574,21 @@ with tab_alloc:
             st.warning("Could not determine country exposure. Check that tickers are correct.")
         else:
             threshold = 0.003
-            # 1. Suodatetaan kynnyksen ylittävät maat ja poistetaan mahdolliset "Other"-tuplat
+            # 1. Filter countries above threshold and remove potential "Other" duplicates
             main_c = country_exp[country_exp >= threshold].copy()
             other_w = country_exp[country_exp < threshold].sum()
 
-            # 2. Yhdistetään älykkäästi "Other"-kategoriaan
+            # 2. Merge small countries into "Other" category
             if other_w > 0.001:
                 if "Other" in main_c.index:
                     main_c["Other"] += other_w
                 else:
                     main_c = pd.concat([main_c, pd.Series({"Other": other_w})])
 
-            # 3. JÄRJESTYS: Lajitellaan muut paitsi "Other" suuruusjärjestykseen
+            # 3. Sort by weight descending, keeping "Other" at the end
             if "Other" in main_c.index:
                 other_val = main_c["Other"]
-                # Tiputetaan Other hetkeksi, lajitellaan loput, ja liitetään Other takaisin loppuun
+                # Temporarily drop Other, sort the rest, then append Other at the end
                 main_c = main_c.drop("Other").sort_values(ascending=False)
                 main_c["Other"] = other_val
             else:
@@ -1640,7 +1642,7 @@ with tab_alloc:
                 tbl[t]  = [f"{detail.get(s, 0) / total_t * 100:.1f}%" for s in all_sectors]
             st.dataframe(pd.DataFrame(tbl), use_container_width=True, hide_index=True)
 
-    # __ Subtab 4: ETF Database ______________________________________________
+    # __ Subtab 4: Ticker Database ______________________________________________
     with dist_subtabs[3]:
         st.caption(
             "One table per portfolio ticker. Edit country and sector weights directly. "
@@ -1718,7 +1720,7 @@ with tab_alloc:
             _in_custom   = _tkey in st.session_state["etf_custom_db"]
             _cached_data = _get_etf_data_cached(_t)
             _has_data    = _cached_data != ({}, {}, None, None)
-            _source_label = "" # (tai mitä tahansa aiemmassa koodissasi olikaan)
+            _source_label = "" # source label placeholder
 
             st.markdown(
                 f'<div class="section-header">{_t}'
@@ -1727,11 +1729,11 @@ with tab_alloc:
                 unsafe_allow_html=True,
             )
 
-            # 1. Luodaan tyhjät containerit visuaalista järjestystä varten
+            # 1. Create empty containers for visual ordering
             ui_top = st.container()
             ui_tables = st.container()
 
-            # 2. Ajetaan taulukot ensin koodissa (mutta asetetaan ne alempaan containeriin)
+            # 2. Render tables first in code (but place them in the lower container)
             with ui_tables:
                 _col_cty, _col_sec = st.columns(2)
 
@@ -1763,15 +1765,13 @@ with tab_alloc:
                         hide_index=True,
                     )
 
-            # 3. Ajetaan nappien logiikka vasta taulukoiden jälkeen (mutta sijoitetaan ylempään containeriin)
+            # 3. Render button logic after tables (but place buttons in the upper container)
             with ui_top:
-                _btn_col, _clr_col = st.columns([3, 1])
+                _btn_col, _gap_col, _clr_col = st.columns([1.5, 7, 1.5])
                 with _btn_col:
-                    if st.button(f"Save {_t}", key=f"etf_save_{_tkey}", width=150, type="primary"):
-                        # Nyt _cty_df ja _sec_df sisältävät oikeasti juuri ne arvot, jotka syötit tähän tickeriin!
+                    if st.button(f"Save {_t}", key=f"etf_save_{_tkey}", width=200, type="primary"):
                         _cty_parsed = _parse_weights(_cty_df, "Country")
                         _sec_parsed = _parse_weights(_sec_df, "Sector")
-                        
                         if not _cty_parsed and not _sec_parsed:
                             st.error(f"{_t}: enter at least one country or sector weight.")
                         else:
@@ -1784,18 +1784,16 @@ with tab_alloc:
                                 if _ek in st.session_state:
                                     del st.session_state[_ek]
                             st.rerun()
-                
                 with _clr_col:
-                    if _in_custom:
-                        if st.button(f"Clear {_t}", key=f"etf_clr_{_tkey}", width=150):
-                            del st.session_state["etf_custom_db"][_tkey]
-                            _reset_editor_cache(_t)
-                            for _ek in (f"etf_cty_{_tkey}", f"etf_sec_{_tkey}"):
-                                if _ek in st.session_state:
-                                    del st.session_state[_ek]
-                            st.rerun()
+                    if st.button(f"Clear {_t}", key=f"etf_clr_{_tkey}", width=200, disabled=not _in_custom):
+                        del st.session_state["etf_custom_db"][_tkey]
+                        _reset_editor_cache(_t)
+                        for _ek in (f"etf_cty_{_tkey}", f"etf_sec_{_tkey}"):
+                            if _ek in st.session_state:
+                                del st.session_state[_ek]
+                        st.rerun()
                             
-            st.write("---") # Lisää nätin erotinviivan tickerien väliin
+            st.write("---") # Divider between tickers
 
 gc.collect()
 
@@ -1807,7 +1805,7 @@ with tab_corr:
         @st.fragment
         def render_correlations():
             st.markdown('<div class="section-header">Correlation Matrix</div>', unsafe_allow_html=True)
-            cm_size = max(7, len(tickers))  # ← kaavion koko (tuumaa, neliö)
+            cm_size = max(7, len(tickers))  # chart size in inches (square)
             cm_pos  = "Left"              # ← sijainti: "Left" / "Center" / "Right"
 
             custom_cmap = LinearSegmentedColormap.from_list(
@@ -1856,13 +1854,13 @@ with tab_corr:
                     fig, ax = plt.subplots(figsize=(12, 4))
                     color_cycle = [ACCENT, ACCENT3, ACCENT4, ACCENT2, '#b19cd9']
 
-                    # Alustetaan muuttuja, jolla seurataan datan alkupistettä (ilman NaN-arvoja)
+                    # Track the first valid data point (excluding NaN values)
                     first_valid_date = None
 
                     for i, (t1, t2) in enumerate(combinations(available, 2)):
                         rc = monthly_r[t1].rolling(window_size).corr(monthly_r[t2])
 
-                        # Päivitetään ensimmäinen validi päivämäärä
+                        # Update first valid date
                         if first_valid_date is None:
                             first_valid_date = rc.dropna().index.min()
 
@@ -1870,7 +1868,7 @@ with tab_corr:
                                 linewidth=2, color=color_cycle[i % len(color_cycle)])
 
                     # MARGINAALIEN KORJAUS:
-                    # Vasen reuna ensimmäiseen laskettuun korrelaatioon
+                    # Left edge aligned to first computed correlation
                     if first_valid_date and pd.notnull(first_valid_date):
                         date_max = monthly_r.index.max()
                         if pd.notnull(date_max) and date_max > first_valid_date:
