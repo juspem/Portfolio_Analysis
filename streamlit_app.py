@@ -1447,7 +1447,7 @@ def _plotly_choropleth(series):
         locations=codes,
         z=vals,
         text=names,
-        colorscale=[[0, PLOT_BG], [0.15, "#1a3a5c"], [0.4, "#2e80b8"], [1, ACCENT3]],
+        colorscale=[[0, "#C1CCDA"], [0.4, "#3E5980"], [1, "#092544"]],
         colorbar=dict(title="Weight %", ticksuffix="%",
                       bgcolor=PLOT_BG, tickfont=dict(color=PLOT_FG)),
         hovertemplate="%{text}: %{z:.2f}%<extra></extra>",
@@ -1467,7 +1467,7 @@ def _plotly_choropleth(series):
         paper_bgcolor=PLOT_BG,
         font=dict(color=PLOT_FG),
         margin=dict(l=0, r=0, t=10, b=10),
-        height=650,
+        height=500,
     )
     return fig
 
@@ -1484,7 +1484,7 @@ def _plotly_sector_bar(series, ticker_detail=None):
     ))
     fig.update_layout(
         title="   Sector Weight",
-        xaxis=dict(title="Weight", ticksuffix="%", range=[0, (series.values.max() * 100) + 2.5]),
+        xaxis=dict(title="Weight (%)", ticksuffix="%", range=[0, (series.values.max() * 100) + 2.5]),
         yaxis=dict(autorange="reversed"),
         template="plotly_dark",
         paper_bgcolor=PLOT_BG,
@@ -1600,8 +1600,6 @@ with tab_alloc:
     # ── Subtab 2: Country Distribution ───────────────────────────────────────
     with dist_subtabs[1]:
         st.markdown('<div class="section-header">Country Distribution</div>', unsafe_allow_html=True)
-        st.caption("Geographic weight from known ETF templates + yfinance fallback. "
-                   "Individual stocks use their home country.")
 
         with st.spinner("Calculating country exposure..."):
             country_exp, country_per_ticker = _agg_exposure(available, list(w_aligned), 0)
@@ -1640,8 +1638,6 @@ with tab_alloc:
     # ── Subtab 3: Sector Distribution ─────────────────────────────────────────
     with dist_subtabs[2]:
         st.markdown('<div class="section-header">Sector Distribution</div>', unsafe_allow_html=True)
-        st.caption("Sector weight from known ETF templates + yfinance fallback. "
-                   "Individual stocks use their GICS sector.")
 
         with st.spinner("Calculating sector exposure..."):
             sector_exp, sector_per_ticker = _agg_exposure(available, list(w_aligned), 1)
