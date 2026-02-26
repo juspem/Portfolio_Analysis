@@ -289,7 +289,7 @@ with st.sidebar:
 
     st.markdown('<div class="section-header">Parameters</div>', unsafe_allow_html=True)
     risk_free_rate           = st.slider("Risk-free rate",           0.0, 10.0, float(_cv("risk_free_rate", _p.risk_free_rate) * 100), 0.1, format="%.1f%%") / 100
-    benchmark_ticker         = st.text_input("Benchmark ticker", _cv("benchmark_ticker", "SPY"))
+    benchmark_ticker         = st.text_input("Benchmark ticker", _cv("benchmark_ticker", ""))
     initial_investment       = st.number_input("Initial investment", 0.01, 10_000_000.0, float(_cv("initial_investment", _p.initial_investment)), step=0.01)
     monthly_investment       = st.number_input("Monthly contribution", 0.0, 50_000.0, float(_cv("monthly_investment", _p.monthly_investment)), step=0.01)
     _car_options = ["Historical"] + [f"{v/10:.1f}%" for v in range(0, 301)]  # 0.0%..30.0%
@@ -400,7 +400,7 @@ asset_classes = dict(zip(tickers, asset_classes_raw))
 
 # ── Title ─────────────────────────────────────────────────────────────────────
 st.markdown("# Portfolio Analysis")
-st.caption(f"Period: {start_date} to {end_date}  |  Benchmark: {benchmark_ticker}  |  Risk-free rate: {risk_free_rate:.2%}")
+st.caption(f"Period: {start_date} to {end_date}  |  Benchmark: {benchmark_ticker if benchmark_ticker.strip() else 'None'}  |  Risk-free rate: {risk_free_rate:.2%}")
 
 if n_tickers == 0:
     st.error("No tickers entered.")
@@ -433,7 +433,7 @@ def load_benchmark(ticker, start, end):
 
 with st.spinner("Fetching market data..."):
     data      = load_data(tickers, start_date, end_date)
-    bench_raw = load_benchmark(benchmark_ticker, start_date, end_date)
+    bench_raw = load_benchmark(benchmark_ticker, start_date, end_date) if benchmark_ticker.strip() else None
 
 # ── Per-ticker currency detection & FX conversion ────────────────────────────
 @st.cache_data(show_spinner=False)
@@ -454,17 +454,18 @@ def get_fx_rate(from_currency, to_currency, date_str):
     target = pd.Timestamp(date_str)
     start  = (target - pd.Timedelta(days=7)).strftime("%Y-%m-%d")
     end    = (target + pd.Timedelta(days=2)).strftime("%Y-%m-%d")
-    try:
-        s = yf.download(pair, start=start, end=end, auto_adjust=True, progress=False)
-        if isinstance(s.columns, pd.MultiIndex):
-            s = s["Close"]
-        s = s.squeeze().dropna()
-        if s.empty:
+    while bench_raw is not None:
+        try:
+            s = yf.download(pair, start=start, end=end, auto_adjust=True, progress=False)
+            if isinstance(s.columns, pd.MultiIndex):
+                s = s["Close"]
+            s = s.squeeze().dropna()
+            if s.empty:
+                return 1.0
+            idx = s.index.get_indexer([target], method="nearest")[0]
+            return float(s.iloc[idx])
+        except Exception:
             return 1.0
-        idx = s.index.get_indexer([target], method="nearest")[0]
-        return float(s.iloc[idx])
-    except Exception:
-        return 1.0
 
 # Detect each ticker's native currency
 with st.spinner("Detecting ticker currencies..."):
@@ -511,10 +512,14 @@ if returns.shape[1] != len(w_aligned):
 portfolio_returns = returns.dot(w_aligned)
 portfolio_returns = pd.Series(portfolio_returns, name="Portfolio")
 
-bench_returns = bench_raw.pct_change(fill_method=None).dropna()
-common_idx    = portfolio_returns.index.intersection(bench_returns.index)
-p_ret         = portfolio_returns.loc[common_idx]
-b_ret         = bench_returns.loc[common_idx]
+if bench_raw is not None and not bench_raw.empty:
+    bench_returns = bench_raw.pct_change(fill_method=None).dropna()
+    common_idx    = portfolio_returns.index.intersection(bench_returns.index)
+    p_ret         = portfolio_returns.loc[common_idx]
+    b_ret         = bench_returns.loc[common_idx]
+else:
+    p_ret = portfolio_returns
+    b_ret = None
 
 
 # ── Helper functions ──────────────────────────────────────────────────────────
@@ -582,7 +587,8 @@ def down_capture(p, b):
 
 
 # ── Compute all metrics ────────────────────────────────────────────────────────
-_corr_coef = float(np.corrcoef(p_ret, b_ret)[0, 1])
+_has_bench = b_ret is not None
+_corr_coef = float(np.corrcoef(p_ret, b_ret)[0, 1]) if _has_bench else np.nan
 m = {
     "Annual Return":       ann_return(p_ret),
     "Annual Volatility":   ann_vol(p_ret),
@@ -592,22 +598,22 @@ m = {
     "Calmar Ratio":        calmar(p_ret),
     "VaR 95%":             var_95(p_ret),
     "CVaR 95%":            cvar_95(p_ret),
-    "Beta":                beta(p_ret.values, b_ret.values),
-    "Alpha (Jensen)":      alpha_jensen(p_ret.values, b_ret.values),
-    "Tracking Error":      tracking_error(p_ret, b_ret),
-    "Information Ratio":   information_ratio(p_ret, b_ret),
-    "Up Capture":          up_capture(p_ret, b_ret),
-    "Down Capture":        down_capture(p_ret, b_ret),
-    "Bench Annual Return": ann_return(b_ret),
-    "Bench Volatility":    ann_vol(b_ret),
-    "Bench Sharpe":        sharpe(b_ret),
-    "Bench Max Drawdown":  max_drawdown(b_ret),
+    "Beta":                beta(p_ret.values, b_ret.values)          if _has_bench else np.nan,
+    "Alpha (Jensen)":      alpha_jensen(p_ret.values, b_ret.values)  if _has_bench else np.nan,
+    "Tracking Error":      tracking_error(p_ret, b_ret)              if _has_bench else np.nan,
+    "Information Ratio":   information_ratio(p_ret, b_ret)           if _has_bench else np.nan,
+    "Up Capture":          up_capture(p_ret, b_ret)                  if _has_bench else np.nan,
+    "Down Capture":        down_capture(p_ret, b_ret)                if _has_bench else np.nan,
+    "Bench Annual Return": ann_return(b_ret)                         if _has_bench else np.nan,
+    "Bench Volatility":    ann_vol(b_ret)                            if _has_bench else np.nan,
+    "Bench Sharpe":        sharpe(b_ret)                             if _has_bench else np.nan,
+    "Bench Max Drawdown":  max_drawdown(b_ret)                       if _has_bench else np.nan,
 }
 
 
 # ── Pre-computed cumulative series (reused in Overview, Risk, Benchmark tabs) ──
 cum_p = (1 + p_ret).cumprod() * initial_investment_native
-cum_b = (1 + b_ret).cumprod() * initial_investment_native
+cum_b = (1 + b_ret).cumprod() * initial_investment_native if _has_bench else None
 
 # ── Tabs ──────────────────────────────────────────────────────────────────────
 _TAB_NAMES = ["Overview", "Performance", "Risk", "Benchmark", "Distribution",
@@ -700,7 +706,8 @@ with tab_overview:
 
         fig, ax = plt.subplots(figsize=(12, 4))
         ax.plot(cum_p.index, cum_p.values, color=ACCENT,  linewidth=2,   label="Portfolio")
-        ax.plot(cum_b.index, cum_b.values, color=ACCENT3, linewidth=1.5, label=benchmark_ticker, alpha=0.7)
+        if cum_b is not None:
+            ax.plot(cum_b.index, cum_b.values, color=ACCENT3, linewidth=1.5, label=benchmark_ticker, alpha=0.7)
         ax.fill_between(cum_p.index, initial_investment_native, cum_p.values, alpha=0.1, color=ACCENT)
         ax.set_ylabel("Value")
         ax.legend(fontsize=9)
@@ -823,13 +830,13 @@ with tab_risk:
                 f"{m['Sortino Ratio']:.3f}",
             ],
             "Benchmark": [
-                f"{m['Bench Volatility']:.2%}",
-                f"{m['Bench Max Drawdown']:.2%}",
-                f"{var_95(b_ret):.2%}",
-                f"{cvar_95(b_ret):.2%}",
-                f"{calmar(b_ret):.3f}",
-                f"{m['Bench Sharpe']:.3f}",
-                f"{sortino(b_ret):.3f}",
+                f"{m['Bench Volatility']:.2%}"  if _has_bench else "N/A",
+                f"{m['Bench Max Drawdown']:.2%}" if _has_bench else "N/A",
+                f"{var_95(b_ret):.2%}"           if _has_bench else "N/A",
+                f"{cvar_95(b_ret):.2%}"          if _has_bench else "N/A",
+                f"{calmar(b_ret):.3f}"           if _has_bench else "N/A",
+                f"{m['Bench Sharpe']:.3f}"       if _has_bench else "N/A",
+                f"{sortino(b_ret):.3f}"          if _has_bench else "N/A",
             ],
         })
         st.dataframe(risk_df, width='stretch', hide_index=True)
@@ -840,13 +847,13 @@ with tab_risk:
         roll      = _cum_p_dd.cummax()
         dd        = (_cum_p_dd - roll) / roll
 
-        _cum_b_dd = (1 + b_ret).cumprod()
-        roll_b    = _cum_b_dd.cummax()
-        dd_b      = (_cum_b_dd - roll_b) / roll_b
-
         fig, ax = plt.subplots(figsize=(12, 4))
         ax.fill_between(dd.index,   dd.values   * 100, 0, color=ACCENT2, alpha=0.6, label="Portfolio")
-        ax.fill_between(dd_b.index, dd_b.values * 100, 0, color=ACCENT3, alpha=0.3, label=benchmark_ticker)
+        if _has_bench:
+            _cum_b_dd = (1 + b_ret).cumprod()
+            roll_b    = _cum_b_dd.cummax()
+            dd_b      = (_cum_b_dd - roll_b) / roll_b
+            ax.fill_between(dd_b.index, dd_b.values * 100, 0, color=ACCENT3, alpha=0.3, label=benchmark_ticker)
         ax.set_xlim(left=dd.index.min() + (dd.index.max() - dd.index.min()) * -0.0015,
                     right=dd.index.max() + (dd.index.max() - dd.index.min()) * 0.0015)
         ax.set_ylabel("Drawdown")
@@ -861,7 +868,8 @@ with tab_risk:
         st.markdown('<div class="section-header">Return Distribution</div>', unsafe_allow_html=True)
         fig, ax = plt.subplots(figsize=(12, 3.5))
         ax.hist(p_ret.values * 100, bins=80, color=ACCENT, alpha=0.75, edgecolor='none', label="Portfolio")
-        ax.hist(b_ret.values * 100, bins=80, color=ACCENT3, alpha=0.4, edgecolor='none', label=benchmark_ticker)
+        if _has_bench:
+            ax.hist(b_ret.values * 100, bins=80, color=ACCENT3, alpha=0.4, edgecolor='none', label=benchmark_ticker)
         v95 = var_95(p_ret) * 100
         ax.axvline(v95, color=ACCENT2, linewidth=1.5, linestyle='--', label=f"VaR 95%: {v95:.2f}%")
         ax.set_xlabel("Daily Return")
@@ -893,6 +901,9 @@ with tab_risk:
 # TAB 4 – BENCHMARK
 # ══════════════════════════════════════════════════════════════════════════════
 with tab_bench:
+    if not _has_bench:
+        st.info("No benchmark selected. Enter a ticker (e.g. **SPY**) in the sidebar to enable benchmark comparison.")
+    else:
         st.markdown('<div class="section-header">Benchmark Comparison</div>', unsafe_allow_html=True)
 
         col1, col2 = st.columns(2)
@@ -2493,21 +2504,21 @@ with tab_report:
             "Max Drawdown":              f"{m['Max Drawdown']:.4%}",
             "VaR 95%":                   f"{m['VaR 95%']:.4%}",
             "CVaR 95%":                  f"{m['CVaR 95%']:.4%}",
-            "Beta":                      f"{m['Beta']:.4f}",
-            "Alpha (Jensen, annualized)":f"{m['Alpha (Jensen)']:.4%}",
-            "Tracking Error":            f"{m['Tracking Error']:.4%}",
-            "Information Ratio":         f"{m['Information Ratio']:.4f}",
-            "Up Capture":                f"{m['Up Capture']:.2f}%",
-            "Down Capture":              f"{m['Down Capture']:.2f}%",
-            "Correlation to Benchmark":  f"{_corr_coef:.4f}",
-            "R-Squared":                 f"{_corr_coef**2:.4f}",
-            "Benchmark Annual Return":   f"{m['Bench Annual Return']:.4%}",
-            "Benchmark Volatility":      f"{m['Bench Volatility']:.4%}",
-            "Benchmark Sharpe":          f"{m['Bench Sharpe']:.4f}",
-            "Benchmark Max Drawdown":    f"{m['Bench Max Drawdown']:.4%}",
+            "Beta":                      f"{m['Beta']:.4f}"                if _has_bench else "N/A",
+            "Alpha (Jensen, annualized)":f"{m['Alpha (Jensen)']:.4%}"       if _has_bench else "N/A",
+            "Tracking Error":            f"{m['Tracking Error']:.4%}"       if _has_bench else "N/A",
+            "Information Ratio":         f"{m['Information Ratio']:.4f}"    if _has_bench else "N/A",
+            "Up Capture":                f"{m['Up Capture']:.2f}%"          if _has_bench else "N/A",
+            "Down Capture":              f"{m['Down Capture']:.2f}%"        if _has_bench else "N/A",
+            "Correlation to Benchmark":  f"{_corr_coef:.4f}"                if _has_bench else "N/A",
+            "R-Squared":                 f"{_corr_coef**2:.4f}"             if _has_bench else "N/A",
+            "Benchmark Annual Return":   f"{m['Bench Annual Return']:.4%}"  if _has_bench else "N/A",
+            "Benchmark Volatility":      f"{m['Bench Volatility']:.4%}"     if _has_bench else "N/A",
+            "Benchmark Sharpe":          f"{m['Bench Sharpe']:.4f}"         if _has_bench else "N/A",
+            "Benchmark Max Drawdown":    f"{m['Bench Max Drawdown']:.4%}"   if _has_bench else "N/A",
             "Start Date":                start_date,
             "End Date":                  end_date,
-            "Benchmark":                 benchmark_ticker,
+            "Benchmark":                 benchmark_ticker if benchmark_ticker.strip() else "None",
             "Risk-Free Rate":            f"{risk_free_rate:.2%}",
         }
 
@@ -2526,7 +2537,7 @@ with tab_report:
                     tmp = tempfile.NamedTemporaryFile(suffix=".html", delete=False)
                     tmp_path = tmp.name
                     tmp.close()  # Close before QuantStats writes (required on Windows)
-                    qs.reports.html(p_ret, benchmark=b_ret, output=tmp_path, title="Portfolio Report", rf=risk_free_rate)
+                    qs.reports.html(p_ret, benchmark=b_ret if _has_bench else None, output=tmp_path, title="Portfolio Report", rf=risk_free_rate)
                     with open(tmp_path, "r", encoding="utf-8") as f:
                         html_content = f.read()
                     os.unlink(tmp_path)
