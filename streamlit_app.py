@@ -4,6 +4,7 @@ import numpy as np
 import yfinance as yf
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
+import matplotlib.ticker as mticker
 import seaborn as sns
 import quantstats as qs
 from datetime import datetime, timedelta, date
@@ -11,12 +12,14 @@ from itertools import combinations
 from collections import defaultdict
 from matplotlib.colors import LinearSegmentedColormap
 from matplotlib.ticker import MaxNLocator
+import colorsys as _colorsys
 import warnings
 import io
 import os
 import tempfile
 import requests
 import gc
+import database as db
 
 warnings.filterwarnings('ignore')
 
@@ -79,26 +82,17 @@ st.set_page_config(
 
 # ── Matplotlib dark theme ─────────────────────────────────────────────────────
 plt.style.use('dark_background')
-PLOT_BG         = '#1a1a1a'
-PLOT_FG         = '#e8e8e8'
-ACCENT          = '#c8f55a'
-ACCENT2         = "#ff4b4b"
-ACCENT3         = '#6bc5ff'
-ACCENT4         = '#ffa94d'
-BUTTONHOVER     = '#ff2121'
-DARK            = '#666666'
-DARKER          = '#2a2a2a'
 
 def apply_style(fig, ax_list=None):
-    fig.patch.set_facecolor(PLOT_BG)
+    fig.patch.set_facecolor(db.PLOT_BG)
     if ax_list is None:
         ax_list = fig.get_axes()
     for ax in ax_list:
-        ax.set_facecolor(PLOT_BG)
-        ax.tick_params(colors=PLOT_FG, labelsize=9)
-        ax.xaxis.label.set_color(PLOT_FG)
-        ax.yaxis.label.set_color(PLOT_FG)
-        ax.title.set_color(PLOT_FG)
+        ax.set_facecolor(db.PLOT_BG)
+        ax.tick_params(colors=db.PLOT_FG, labelsize=9)
+        ax.xaxis.label.set_color(db.PLOT_FG)
+        ax.yaxis.label.set_color(db.PLOT_FG)
+        ax.title.set_color(db.PLOT_FG)
         for spine in ax.spines.values():
             spine.set_edgecolor('#2a2a2a')
         ax.grid(True, color='#2a2a2a', linewidth=0.5, alpha=0.8)
@@ -110,31 +104,31 @@ st.markdown(f"""
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@300;400;600&display=swap');
             
 section[data-testid="stSidebar"] .stButton > button[kind="primary"] {{
-    background-color: {ACCENT2};
-    color: {PLOT_FG};
-    border: 1px solid {ACCENT2};
+    background-color: {db.ACCENT2};
+    color: {db.PLOT_FG};
+    border: 1px solid {db.ACCENT2};
 }}
 
 section[data-testid="stSidebar"] .stButton > button[kind="primary"]:hover {{
-    background-color: {BUTTONHOVER};
-    color: {PLOT_FG};
-    border: 1px solid {BUTTONHOVER};
+    background-color: {db.BUTTONHOVER};
+    color: {db.PLOT_FG};
+    border: 1px solid {db.BUTTONHOVER};
 }}
 
 .stSlider [data-baseweb="slider"] [role="slider"] {{
-    background-color: {ACCENT2};
+    background-color: {db.ACCENT2};
 }}
 
 .stSlider [data-baseweb="slider"] [data-testid="stThumbValue"] {{
-    color: {ACCENT2};
+    color: {db.ACCENT2};
 }}
 
 .stSlider [data-baseweb="slider"] div[data-testid="stSlider"] {{
-    color: {ACCENT2};
+    color: {db.ACCENT2};
 }}
 
 st-ct {{
-    background-color: {ACCENT} !important;
+    background-color: {db.ACCENT} !important;
 }}
 
 html, body, [class*="css"] {{
@@ -148,7 +142,7 @@ h1, h2, h3 {{
 
 .stApp {{
     background-color: {'#0f0f0f'};
-    color: {PLOT_FG};
+    color: {db.PLOT_FG};
 }}
 
 section[data-testid="stSidebar"] {{
@@ -158,8 +152,8 @@ section[data-testid="stSidebar"] {{
 
 .metric-card {{
     background: {'#1a1a1a'};
-    border: 1px solid {DARKER};
-    border-left: 3px solid {ACCENT};
+    border: 1px solid {db.DARKER};
+    border-left: 3px solid {db.ACCENT};
     padding: 1rem 1.2rem;
     margin-bottom: 0.5rem;
 }}
@@ -167,7 +161,7 @@ section[data-testid="stSidebar"] {{
 .metric-label {{
     font-family: 'IBM Plex Mono', monospace;
     font-size: 0.7rem;
-    color: {DARK};
+    color: {db.DARK};
     text-transform: uppercase;
     letter-spacing: 0.1em;
     margin-bottom: 0.3rem;
@@ -177,19 +171,19 @@ section[data-testid="stSidebar"] {{
     font-family: 'IBM Plex Mono', monospace;
     font-size: 1.4rem;
     font-weight: 600;
-    color: {PLOT_FG};
+    color: {db.PLOT_FG};
 }}
 
-.metric-value.positive {{ color: {ACCENT}; }}
-.metric-value.negative {{ color: {ACCENT2}; }}
+.metric-value.positive {{ color: {db.ACCENT}; }}
+.metric-value.negative {{ color: {db.ACCENT2}; }}
 
 .section-header {{
     font-family: 'IBM Plex Mono', monospace;
     font-size: 0.75rem;
-    color: {DARK};
+    color: {db.DARK};
     text-transform: uppercase;
     letter-spacing: 0.15em;
-    border-bottom: 1px solid {DARKER};
+    border-bottom: 1px solid {db.DARKER};
     padding-bottom: 0.5rem;
     margin: 2rem 0 1rem 0;
 }}
@@ -201,8 +195,8 @@ section[data-testid="stSidebar"] {{
 }}
 
 div[data-testid="stMetric"] {{
-    background: {PLOT_BG};
-    border: 1px solid {DARKER};
+    background: {db.PLOT_BG};
+    border: 1px solid {db.DARKER};
     padding: 1rem;
 }}
 
@@ -212,22 +206,22 @@ div[data-testid="stMetric"] {{
 }}
 /* Target buttons that contain bold (strong) text */
 div[data-testid="stColumn"] button:has(strong) {{
-    background-color: {ACCENT2} !important; /* Streamlit red or your custom color */
-    border-color: {ACCENT2} !important;
-    color: {PLOT_FG} !important;
+    background-color: {db.ACCENT2} !important; /* Streamlit red or your custom color */
+    border-color: {db.ACCENT2} !important;
+    color: {db.PLOT_FG} !important;
 }}
 
 /* Style for bold text inside the button (size and weight) */
 div[data-testid="stColumn"] button strong {{
     font-weight: 900 !important;
     font-size: 1.2rem !important;
-    color: {PLOT_FG} !important;
+    color: {db.PLOT_FG} !important;
 }}
 
 /* Hover-efekti aktiiviselle napille (pysyy punaisena) */
 div[data-testid="stColumn"] button:has(strong):hover {{
-    background-color: {ACCENT2} !important;
-    border-color: {ACCENT2} !important;
+    background-color: {db.ACCENT2} !important;
+    border-color: {db.ACCENT2} !important;
 }}
 
 /* Remove rounded corners from chart containers */
@@ -240,7 +234,6 @@ div[data-testid="stColumn"] button:has(strong):hover {{
 """, unsafe_allow_html=True)
 
 # ── Global dollar formatter ───────────────────────────────────────────────────
-import matplotlib.ticker as mticker
 
 def fmt_dollar(value):
     """Format an actual dollar value into a readable string."""
@@ -709,10 +702,10 @@ with tab_overview:
         st.markdown('<div class="section-header">Cumulative Growth</div>', unsafe_allow_html=True)
 
         fig, ax = plt.subplots(figsize=(12, 4))
-        ax.plot(cum_p.index, cum_p.values, color=ACCENT,  linewidth=2,   label="Portfolio")
+        ax.plot(cum_p.index, cum_p.values, color=db.ACCENT,  linewidth=2,   label="Portfolio")
         if cum_b is not None:
-            ax.plot(cum_b.index, cum_b.values, color=ACCENT3, linewidth=1.5, label=benchmark_ticker, alpha=0.7)
-        ax.fill_between(cum_p.index, initial_investment_native, cum_p.values, alpha=0.1, color=ACCENT)
+            ax.plot(cum_b.index, cum_b.values, color=db.ACCENT3, linewidth=1.5, label=benchmark_ticker, alpha=0.7)
+        ax.fill_between(cum_p.index, initial_investment_native, cum_p.values, alpha=0.1, color=db.ACCENT)
         ax.set_ylabel("Value")
         ax.legend(fontsize=9)
         date_min = cum_p.index.min()
@@ -737,7 +730,7 @@ with tab_perf:
 
         # 1. Daily returns bar
         axes[0].bar(p_ret.index, p_ret.values,
-                    color=np.where(p_ret.values >= 0, ACCENT, ACCENT2), width=1, alpha=0.8)
+                    color=np.where(p_ret.values >= 0, db.ACCENT, db.ACCENT2), width=1, alpha=0.8)
         axes[0].set_xlim(left=p_ret.index.min() + ((p_ret.index.max() - p_ret.index.min()) * -0.003),
                          right=p_ret.index.max() + ((p_ret.index.max() - p_ret.index.min()) * 0.003))
         axes[0].set_ylabel("Daily Return")
@@ -746,8 +739,8 @@ with tab_perf:
 
         # 2. Cumulative returns
         cum = (1 + p_ret).cumprod() - 1
-        axes[1].plot(cum.index, cum.values * 100, color=ACCENT, linewidth=2)
-        axes[1].fill_between(cum.index, 0, cum.values * 100, alpha=0.15, color=ACCENT)
+        axes[1].plot(cum.index, cum.values * 100, color=db.ACCENT, linewidth=2)
+        axes[1].fill_between(cum.index, 0, cum.values * 100, alpha=0.15, color=db.ACCENT)
         axes[1].set_xlim(left=cum.index.min() + ((cum.index.max() - cum.index.min()) * -0.001),
                          right=cum.index.max() + ((cum.index.max() - cum.index.min()) * 0.001))
         axes[1].set_ylabel("Cumulative Return")
@@ -757,8 +750,8 @@ with tab_perf:
         # 3. Rolling 30-day volatility
         roll_vol        = p_ret.rolling(30).std() * np.sqrt(252) * 100
         roll_vol_valid  = roll_vol.dropna()
-        axes[2].plot(roll_vol.index, roll_vol.values, color=ACCENT4, linewidth=1.5)
-        axes[2].fill_between(roll_vol.index, 0, roll_vol.values, alpha=0.2, color=ACCENT4)
+        axes[2].plot(roll_vol.index, roll_vol.values, color=db.ACCENT4, linewidth=1.5)
+        axes[2].fill_between(roll_vol.index, 0, roll_vol.values, alpha=0.2, color=db.ACCENT4)
         _rv_min, _rv_max = roll_vol_valid.index.min(), roll_vol_valid.index.max()
         axes[2].set_xlim(left=_rv_min + ((_rv_max - _rv_min) * -0.001),
                          right=_rv_max + ((_rv_max - _rv_min) * 0.001))
@@ -802,7 +795,7 @@ with tab_perf:
         st.markdown('<div class="section-header">Annual Returns</div>', unsafe_allow_html=True)
         annual = p_ret.resample('YE').apply(lambda x: (1 + x).prod() - 1)
         fig, ax = plt.subplots(figsize=(12, 3))
-        colors_bar = [ACCENT if v >= 0 else ACCENT2 for v in annual.values]
+        colors_bar = [db.ACCENT if v >= 0 else db.ACCENT2 for v in annual.values]
         ax.bar(annual.index.year, annual.values * 100, color=colors_bar, width=0.6)
         ax.axhline(0, color='#555', linewidth=0.8)
         ax.set_ylabel("Return")
@@ -852,12 +845,12 @@ with tab_risk:
         dd        = (_cum_p_dd - roll) / roll
 
         fig, ax = plt.subplots(figsize=(12, 4))
-        ax.fill_between(dd.index,   dd.values   * 100, 0, color=ACCENT2, alpha=0.6, label="Portfolio")
+        ax.fill_between(dd.index,   dd.values   * 100, 0, color=db.ACCENT2, alpha=0.6, label="Portfolio")
         if _has_bench:
             _cum_b_dd = (1 + b_ret).cumprod()
             roll_b    = _cum_b_dd.cummax()
             dd_b      = (_cum_b_dd - roll_b) / roll_b
-            ax.fill_between(dd_b.index, dd_b.values * 100, 0, color=ACCENT3, alpha=0.3, label=benchmark_ticker)
+            ax.fill_between(dd_b.index, dd_b.values * 100, 0, color=db.ACCENT3, alpha=0.3, label=benchmark_ticker)
         ax.set_xlim(left=dd.index.min() + (dd.index.max() - dd.index.min()) * -0.0015,
                     right=dd.index.max() + (dd.index.max() - dd.index.min()) * 0.0015)
         ax.set_ylabel("Drawdown")
@@ -871,11 +864,11 @@ with tab_risk:
         # Return distribution
         st.markdown('<div class="section-header">Return Distribution</div>', unsafe_allow_html=True)
         fig, ax = plt.subplots(figsize=(12, 3.5))
-        ax.hist(p_ret.values * 100, bins=80, color=ACCENT, alpha=0.75, edgecolor='none', label="Portfolio")
+        ax.hist(p_ret.values * 100, bins=80, color=db.ACCENT, alpha=0.75, edgecolor='none', label="Portfolio")
         if _has_bench:
-            ax.hist(b_ret.values * 100, bins=80, color=ACCENT3, alpha=0.4, edgecolor='none', label=benchmark_ticker)
+            ax.hist(b_ret.values * 100, bins=80, color=db.ACCENT3, alpha=0.4, edgecolor='none', label=benchmark_ticker)
         v95 = var_95(p_ret) * 100
-        ax.axvline(v95, color=ACCENT2, linewidth=1.5, linestyle='--', label=f"VaR 95%: {v95:.2f}%")
+        ax.axvline(v95, color=db.ACCENT2, linewidth=1.5, linestyle='--', label=f"VaR 95%: {v95:.2f}%")
         ax.set_xlabel("Daily Return")
         ax.set_ylabel("Frequency")
         ax.set_title("Return Distribution")
@@ -892,9 +885,9 @@ with tab_risk:
             st.caption("Not enough data for 252-day rolling Sharpe.")
         else:
             fig, ax = plt.subplots(figsize=(12, 3))
-            ax.plot(roll_sharpe.index, roll_sharpe.values, color=ACCENT, linewidth=1.5)
+            ax.plot(roll_sharpe.index, roll_sharpe.values, color=db.ACCENT, linewidth=1.5)
             ax.axhline(0, color='#555', linewidth=0.8)
-            ax.axhline(1, color=ACCENT, linewidth=0.6, linestyle='--', alpha=0.5)
+            ax.axhline(1, color=db.ACCENT, linewidth=0.6, linestyle='--', alpha=0.5)
             ax.set_ylabel("Sharpe Ratio")
             apply_style(fig, [ax])
             st.pyplot(fig)
@@ -940,8 +933,8 @@ with tab_bench:
 
         # Cumulative comparison
         fig, ax = plt.subplots(figsize=(12, 4))
-        ax.plot(cum_p.index, cum_p.values, color=ACCENT,  linewidth=2,   label="Portfolio")
-        ax.plot(cum_b.index, cum_b.values, color=ACCENT3, linewidth=1.5, label=benchmark_ticker, alpha=0.8)
+        ax.plot(cum_p.index, cum_p.values, color=db.ACCENT,  linewidth=2,   label="Portfolio")
+        ax.plot(cum_b.index, cum_b.values, color=db.ACCENT3, linewidth=1.5, label=benchmark_ticker, alpha=0.8)
         ax.set_xlim(left=cum_p.index.min(), 
                     right=cum_p.index.max() + (cum_p.index.max() - cum_p.index.min()) * 0.01)
         ax.set_ylabel("Value")
@@ -971,7 +964,7 @@ with tab_bench:
             st.caption("Not enough data for 252-day rolling Beta.")
         else:
             fig, ax = plt.subplots(figsize=(12, 3))
-            ax.plot(rb.index, rb.values, color=ACCENT4, linewidth=1.5)
+            ax.plot(rb.index, rb.values, color=db.ACCENT4, linewidth=1.5)
             ax.axhline(1, color='#555', linewidth=0.8, linestyle='--')
             ax.axhline(0, color='#333', linewidth=0.5)
             ax.set_ylabel("Beta")
@@ -983,13 +976,13 @@ with tab_bench:
         st.markdown('<div class="section-header">Excess Returns Scatter</div>', unsafe_allow_html=True)
         _sc_size = 7
         fig, ax = plt.subplots(figsize=(_sc_size, _sc_size))
-        ax.scatter(b_ret.values * 100, p_ret.values * 100,
-                   color=ACCENT, alpha=0.5, s=4, linewidths=0)
+        ax.scatter(b_ret.values * 100, p_ret_c.values * 100,
+                   color=db.ACCENT, alpha=0.5, s=4, linewidths=0)
         xlim = max(abs(b_ret.values).max() * 100, 1)
         x_line = np.linspace(-xlim, xlim, 100)
         b_val  = m["Beta"]
-        a_val  = (np.mean(p_ret.values) - b_val * np.mean(b_ret.values)) * 100
-        ax.plot(x_line, b_val * x_line + a_val, color=ACCENT2, linewidth=1.5,
+        a_val  = (np.mean(p_ret_c.values) - b_val * np.mean(b_ret.values)) * 100
+        ax.plot(x_line, b_val * x_line + a_val, color=db.ACCENT2, linewidth=1.5,
                 label=f"Regression (β={b_val:.2f})", alpha=0.4)
         ax.axhline(0, color='#505050', linewidth=1, alpha=0.5)
         ax.axvline(0, color='#505050', linewidth=1, alpha=0.5)
@@ -1014,37 +1007,9 @@ with tab_bench:
 
 
 # ── Shared pie chart color helpers & draw_pie (used in Allocation + Optimization) ──
-import colorsys as _colorsys
-
-ASSET_GROUP_COLORS = [
-    (['etf', 'stocks', 'fund', 'index', 'tracker', 'ishares', 'vanguard',
-      'msci', 'sp500', 's&p', 'nasdaq', 'dow', 'russell', 'country etf',
-      'sector etf', 'bond etf', 'equity etf', 'eft'],       "#1a78c2"),
-    (['stock', 'equity', 'share', 'growth', 'value', 'small cap',
-      'mid cap', 'large cap', 'dividend'],                    "#e63946"),
-    (['cash', 'money market', 'savings', 'deposit', 'liquidity',
-      'eurusd=x', 'usdeur=x', 'gbpusd=x', 'usdgbp=x', 'usdjpy=x',
-      'jpyusd=x', 'usdchf=x', 'chfusd=x', 'usdcad=x', 'cadusd=x',
-      'audusd=x', 'usdaud=x', 'nzdusd=x', 'usdnzd=x', 'usdsek=x',
-      'usdnok=x', 'usddkk=x', 'usdpln=x', 'usdhuf=x', 'usdczk=x',
-      'usdsgd=x', 'usdhkd=x', 'usdcny=x', 'usdtry=x', 'usdinr=x',
-      'usdbrl=x', 'usdmxn=x', 'usdzar=x', 'usdkrw=x',
-      'eurusd', 'gbpusd', 'usdjpy', 'usdchf', 'usdcad', 'audusd',
-      'nzdusd', 'usd', 'eur', 'gbp', 'jpy', 'chf'],          "#1a7a3c"),
-    (['bond', 'fixed income', 'treasury', 'gilt', 'note',
-      'corporate bond', 'municipal', 'high yield', 'duration'],  '#2c3e8c'),
-    (['reit', 'real estate', 'property', 'infrastructure'],  '#c8a96e'),
-    (['commodity', 'gold', 'silver', 'oil', 'gas', 'copper',
-      'wheat', 'corn', 'platinum', 'natural resource'],       '#a0522d'),
-    (['crypto', 'bitcoin', 'ethereum', 'btc', 'eth', 'xrp', 'sol',
-      'bnb', 'doge', 'ada', 'avax', 'btc-usd', 'eth-usd', 'usdt',
-      'usdc', 'dai'],                                          '#F7931A'),
-    (['forex', 'currency', 'fx', '=x', 'eurgbp=x', 'eurjpy=x'],  '#1a7a3c'),
-]
-
 def _get_group_color(label):
     l = label.lower()
-    for keywords, color in ASSET_GROUP_COLORS:
+    for keywords, color in db.ASSET_GROUP_COLORS:
         if any(kw in l for kw in keywords):
             return color
     return '#7f8c8d'
@@ -1105,253 +1070,20 @@ def draw_pie(ax, sizes, labels, colors, title, filter_zero=False):
         frameon=True,
         facecolor='#1a1a1a',
         edgecolor='#2a2a2a',
-        labelcolor=PLOT_FG,
+        labelcolor=db.PLOT_FG,
     )
-    ax.set_title(title, color=PLOT_FG, pad=12, loc='center')
-    ax.set_facecolor(PLOT_BG)
+    ax.set_title(title, color=db.PLOT_FG, pad=12, loc='center')
+    ax.set_facecolor(db.PLOT_BG)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 5 – DISTRIBUTION  (helpers defined at module level so cache works)
 # ══════════════════════════════════════════════════════════════════════════════
 
-# ── Country name → ISO-3166-1 alpha-3 lookup ─────────────────────────────────
-_COUNTRY_ISO3 = {
-    "United States":"USA","Japan":"JPN","United Kingdom":"GBR","France":"FRA",
-    "Canada":"CAN","Switzerland":"CHE","Germany":"DEU","Australia":"AUS",
-    "Netherlands":"NLD","Denmark":"DNK","Sweden":"SWE","Hong Kong":"HKG",
-    "Spain":"ESP","Italy":"ITA","Singapore":"SGP","Finland":"FIN","Belgium":"BEL",
-    "Norway":"NOR","Israel":"ISR","New Zealand":"NZL","Portugal":"PRT",
-    "Ireland":"IRL","Austria":"AUT","Taiwan":"TWN","South Korea":"KOR",
-    "China":"CHN","India":"IND","Brazil":"BRA","Mexico":"MEX","South Africa":"ZAF",
-    "Poland":"POL","Czech Republic":"CZE","Hungary":"HUN","Greece":"GRC",
-    "Malaysia":"MYS","Thailand":"THA","Indonesia":"IDN","Philippines":"PHL",
-    "Saudi Arabia":"SAU","UAE":"ARE","Qatar":"QAT","Kuwait":"KWT","Egypt":"EGY",
-    "Turkey":"TUR","Russia":"RUS","Chile":"CHL","Colombia":"COL","Peru":"PER",
-    "Argentina":"ARG","Luxembourg":"LUX","Cayman Islands":"CYM","Bermuda":"BMU",
-}
-
-# ── Sector colour palette ─────────────────────────────────────────────────────
-SECTOR_COLORS = {
-    "Information Technology": "#1a78c2", "Technology": "#1a78c2",
-    "Health Care": "#e63946",            "Healthcare": "#e63946",
-    "Financials": "#e6a817",             "Financial Services": "#e6a817",
-    "Consumer Discretionary": "#f4631e",
-    "Consumer Staples": "#f5c518",
-    "Energy": "#b85c00",
-    "Industrials": "#5b8db8",
-    "Materials": "#a0522d",
-    "Real Estate": "#c8a96e",            "Realestate": "#c8a96e",
-    "Communication Services": "#7c4dff", "Communication": "#7c4dff",
-    "Utilities": "#80c41c",
-    "Government": "#2c3e8c",
-    "Cash": "#1a7a3c", "Currency": "#1a7a3c",
-    "Other": "#444444",
-}
-
-# ── Known ETF country weights (normalised to sum≈1) ──────────────────────────
-# Keys: uppercase base ticker without exchange suffix
-_KNOWN_ETF_COUNTRIES = {
-    # MSCI World trackers (IWDA, SWDA, VWCE, EUNL, FLX5, LCWD …)
-    "MSCI_WORLD": {
-        "United States":0.705,"Japan":0.058,"United Kingdom":0.038,"France":0.032,
-        "Canada":0.030,"Switzerland":0.026,"Germany":0.023,"Australia":0.019,
-        "Netherlands":0.014,"Denmark":0.009,"Sweden":0.008,"Hong Kong":0.008,
-        "Spain":0.007,"Italy":0.006,"Singapore":0.004,"Finland":0.003,
-        "Belgium":0.003,"Norway":0.002,"Israel":0.004,"New Zealand":0.002,
-    },
-    # MSCI World Infrastructure Sector Capped Index
-    # Source: MSCI Index Factsheet, Jan 30, 2026
-    "MSCI_INFRA": {
-        "United States":0.5395,"Canada":0.123,"Japan":0.076,"Spain":0.049,
-        "Germany":0.045,"United Kingdom":0.035,"Australia":0.030,
-        "France":0.025,"Italy":0.020,"Netherlands":0.015,"Other":0.043,
-    },
-    # Franklin FTSE India / MSCI India — 100% India
-    "FTSE_INDIA": {
-        "India":1.00,
-    },
-    # S&P 500
-    "SP500": {
-        "United States":1.00,
-    },
-    # S&P 500 Paris Aligned Climate (FLX5) — 100% USA, same as SP500
-    "SP500_PARIS": {
-        "United States":1.00,
-    },
-    # MSCI Emerging Markets
-    "MSCI_EM": {
-        "China":0.27,"India":0.18,"Taiwan":0.18,"South Korea":0.12,
-        "Brazil":0.05,"Saudi Arabia":0.04,"South Africa":0.03,"Mexico":0.02,
-        "Malaysia":0.02,"Thailand":0.02,"Indonesia":0.02,"Other":0.05,
-    },
-    # MSCI ACWI
-    "MSCI_ACWI": {
-        "United States":0.635,"Japan":0.052,"United Kingdom":0.034,"France":0.029,
-        "Canada":0.027,"China":0.026,"Switzerland":0.023,"Germany":0.021,
-        "Australia":0.017,"Taiwan":0.017,"India":0.016,"South Korea":0.013,
-        "Netherlands":0.013,"Sweden":0.007,"Denmark":0.008,"Hong Kong":0.007,
-        "Spain":0.006,"Italy":0.005,"Singapore":0.004,"Brazil":0.004,
-    },
-    # Europe trackers
-    "EUROPE": {
-        "United Kingdom":0.22,"France":0.18,"Germany":0.15,"Switzerland":0.13,
-        "Netherlands":0.07,"Sweden":0.06,"Denmark":0.05,"Spain":0.04,
-        "Italy":0.04,"Belgium":0.02,"Finland":0.02,"Norway":0.01,"Other":0.01,
-    },
-    # Global Real Estate / REIT
-    "GLOBAL_REIT": {
-        "United States":0.63,"Japan":0.11,"Australia":0.07,"United Kingdom":0.05,
-        "Singapore":0.04,"Canada":0.03,"France":0.03,"Germany":0.02,"Other":0.02,
-    },
-    # Nordics
-    "NORDIC": {
-        "Sweden":0.42,"Denmark":0.28,"Finland":0.16,"Norway":0.14,
-    },
-    # US Bond / Treasury — domiciled USA
-    "US_BOND": {"United States":1.00},
-    # Euro Bond
-    "EUR_BOND": {
-        "France":0.22,"Germany":0.18,"Italy":0.16,"Spain":0.12,"Netherlands":0.09,
-        "Belgium":0.06,"Austria":0.04,"Portugal":0.03,"Finland":0.03,"Other":0.07,
-    },
-    # Global Bond
-    "GLOBAL_BOND": {
-        "United States":0.40,"Japan":0.10,"France":0.07,"Germany":0.07,
-        "United Kingdom":0.06,"Italy":0.05,"Canada":0.04,"China":0.04,"Other":0.17,
-    },
-    # Commodities — by country of exchange/production
-    "COMMODITY": {
-        "United States":0.55,"United Kingdom":0.15,"Germany":0.10,"Other":0.20,
-    },
-}
-
-# ── Known ETF sector weights ──────────────────────────────────────────────────
-_KNOWN_ETF_SECTORS = {
-    "MSCI_WORLD": {
-        "Information Technology":0.24,"Financials":0.16,"Health Care":0.12,
-        "Industrials":0.10,"Consumer Discretionary":0.10,
-        "Communication Services":0.08,"Consumer Staples":0.07,
-        "Energy":0.05,"Materials":0.04,"Real Estate":0.02,"Utilities":0.02,
-    },
-    # MSCI World Infrastructure Sector Capped Index
-    # Source: MSCI Index Factsheet, Jan 30, 2026
-    "MSCI_INFRA": {
-        "Communication Services":0.329,"Utilities":0.326,"Energy":0.254,
-        "Health Care":0.048,"Industrials":0.038,"Other":0.004,
-    },
-    # Franklin FTSE India / MSCI India
-    # Source: Yahoo Finance FLXI.DE, Feb 2025
-    "FTSE_INDIA": {
-        "Financials":0.2801,"Consumer Discretionary":0.1229,"Information Technology":0.1028,
-        "Energy":0.0950,"Industrials":0.0913,"Materials":0.0870,
-        "Health Care":0.0600,"Consumer Staples":0.0572,
-        "Communication Services":0.0487,"Utilities":0.0415,"Real Estate":0.0134,
-    },
-    "SP500": {
-        "Information Technology":0.29,"Financials":0.13,"Health Care":0.13,
-        "Consumer Discretionary":0.10,"Industrials":0.09,
-        "Communication Services":0.09,"Consumer Staples":0.06,
-        "Energy":0.04,"Materials":0.02,"Real Estate":0.02,"Utilities":0.02,
-    },
-    # S&P 500 Paris Aligned Climate — heavy tech tilt, zero energy
-    # Source: Yahoo Finance FLX5.DE
-    "SP500_PARIS": {
-        "Information Technology":0.389,"Financials":0.142,
-        "Consumer Discretionary":0.110,"Communication Services":0.105,
-        "Health Care":0.102,"Consumer Staples":0.054,
-        "Industrials":0.052,"Real Estate":0.022,
-        "Materials":0.016,"Utilities":0.009,"Energy":0.000,
-    },
-    "MSCI_EM": {
-        "Information Technology":0.22,"Financials":0.22,"Consumer Discretionary":0.13,
-        "Communication Services":0.10,"Materials":0.09,"Energy":0.07,
-        "Industrials":0.06,"Consumer Staples":0.05,"Health Care":0.04,"Utilities":0.02,
-    },
-    "MSCI_ACWI": {
-        "Information Technology":0.24,"Financials":0.16,"Health Care":0.11,
-        "Industrials":0.10,"Consumer Discretionary":0.10,
-        "Communication Services":0.08,"Consumer Staples":0.07,
-        "Energy":0.05,"Materials":0.04,"Real Estate":0.02,"Utilities":0.02,
-    },
-    "EUROPE": {
-        "Financials":0.18,"Industrials":0.16,"Health Care":0.15,
-        "Consumer Staples":0.12,"Consumer Discretionary":0.10,
-        "Materials":0.08,"Energy":0.07,"Information Technology":0.07,
-        "Utilities":0.04,"Communication Services":0.03,
-    },
-    "GLOBAL_REIT": {
-        "Real Estate":1.00,
-    },
-    "NORDIC": {
-        "Industrials":0.22,"Financials":0.18,"Health Care":0.14,
-        "Information Technology":0.13,"Consumer Staples":0.09,
-        "Materials":0.08,"Communication Services":0.07,"Energy":0.05,
-        "Consumer Discretionary":0.04,
-    },
-    "US_BOND":     {"Financials":0.30,"Government":0.70},
-    "EUR_BOND":    {"Financials":0.25,"Government":0.75},
-    "GLOBAL_BOND": {"Financials":0.20,"Government":0.80},
-    "COMMODITY":   {"Energy":0.35,"Materials":0.40,"Consumer Staples":0.15,"Other":0.10},
-}
-
-# ── Ticker → ETF template mapping (add more as needed) ───────────────────────
-_TICKER_TO_TEMPLATE = {
-    # iShares MSCI World (multiple exchange listings)
-    "IWDA": "MSCI_WORLD", "IWDA.L": "MSCI_WORLD", "IWDA.AS": "MSCI_WORLD",
-    "SWDA": "MSCI_WORLD", "SWDA.L": "MSCI_WORLD",
-    "EUNL": "MSCI_WORLD", "EUNL.DE": "MSCI_WORLD",
-    "LCWD": "MSCI_WORLD", "LCWD.L": "MSCI_WORLD",
-    "VWCE": "MSCI_ACWI",  "VWCE.DE": "MSCI_ACWI",  "VWCE.L": "MSCI_ACWI",
-    # FLX5 = Franklin S&P 500 Paris Aligned Climate UCITS ETF (100% USA, zero energy)
-    "FLX5": "SP500_PARIS", "FLX5.DE": "SP500_PARIS", "FLX5.L": "SP500_PARIS",
-    "FLX5.AS": "SP500_PARIS", "FLX5.SW": "SP500_PARIS", "FLX5.F": "SP500_PARIS",
-    # FLXI = Franklin FTSE India UCITS ETF (100% India)
-    "FLXI": "FTSE_INDIA", "FLXI.DE": "FTSE_INDIA", "FLXI.L": "FTSE_INDIA",
-    "FLXI.AS": "FTSE_INDIA", "FLXI.SW": "FTSE_INDIA", "FLXI.F": "FTSE_INDIA",
-    # S&P 500
-    "SPY": "SP500", "VOO": "SP500", "IVV": "SP500", "CSPX": "SP500",
-    "CSPX.L": "SP500", "SXR8": "SP500", "SXR8.DE": "SP500",
-    "IUSA": "SP500", "IUSA.L": "SP500",
-    # ACWI
-    "ACWI": "MSCI_ACWI", "ISAC": "MSCI_ACWI", "ISAC.L": "MSCI_ACWI",
-    # Emerging Markets
-    "EEM": "MSCI_EM", "VWO": "MSCI_EM", "EIMI": "MSCI_EM", "EIMI.L": "MSCI_EM",
-    "IEEM": "MSCI_EM", "IEEM.L": "MSCI_EM",
-    # Europe
-    "VGK": "EUROPE", "IEUR": "EUROPE", "EZU": "EUROPE",
-    "IMEU": "EUROPE", "IMEU.L": "EUROPE",
-    "MEUD": "EUROPE", "MEUD.L": "EUROPE",
-    # Nordics
-    "NORDEN": "NORDIC",
-    # Global REIT
-    "REET": "GLOBAL_REIT", "IWDP": "GLOBAL_REIT", "IWDP.L": "GLOBAL_REIT",
-    # Bonds
-    "AGG": "US_BOND", "BND": "US_BOND", "TLT": "US_BOND",
-    "IEAG": "EUR_BOND", "IEAG.L": "EUR_BOND",
-    "IGLO": "GLOBAL_BOND", "IGLO.L": "GLOBAL_BOND",
-    # Commodities
-    "GLD": "COMMODITY", "IAU": "COMMODITY", "PHAU": "COMMODITY",
-    "PDBC": "COMMODITY", "DJP": "COMMODITY",
-}
-
-# Sector name synonyms — normalise to canonical name before aggregation
-_SECTOR_NORM = {
-    "Financial Services": "Financials",
-    "Technology": "Information Technology",
-    "Healthcare": "Health Care",
-    "Realestate": "Real Estate",
-    "Communication": "Communication Services",
-    "Consumer Cyclical": "Consumer Discretionary",
-    "Consumer Defensive": "Consumer Staples",
-    "Basic Materials": "Materials",
-    "Cash":"Currency",
-}
-
 def _normalise_sectors(d):
     out = {}
     for k, v in d.items():
-        canon = _SECTOR_NORM.get(k, k)
+        canon = db._SECTOR_NORM.get(k, k)
         out[canon] = out.get(canon, 0) + v
     return out
 
@@ -1364,10 +1096,10 @@ def _get_etf_data_cached(ticker):
     Does NOT check session_state overrides.
     """
     # 1. Known ticker → use hardcoded template, skip yfinance entirely
-    tmpl = _TICKER_TO_TEMPLATE.get(ticker.upper())
+    tmpl = db._TICKER_TO_TEMPLATE.get(ticker.upper())
     if tmpl:
-        return (_KNOWN_ETF_COUNTRIES.get(tmpl, {}),
-                _KNOWN_ETF_SECTORS.get(tmpl, {}),
+        return (db._KNOWN_ETF_COUNTRIES.get(tmpl, {}),
+                db._KNOWN_ETF_SECTORS.get(tmpl, {}),
                 None, None)
 
     # 2. Unknown ticker → try yfinance
@@ -1434,7 +1166,7 @@ def _plotly_country_bar(series):
         x=top.values * 100,
         y=top.index,
         orientation='h',
-        marker_color=ACCENT3,
+        marker_color=db.ACCENT3,
         text=[f"{v*100:.1f}%" for v in top.values],
         textposition='outside',
     ))
@@ -1443,9 +1175,9 @@ def _plotly_country_bar(series):
         xaxis=dict(title="Weight", ticksuffix="%"),
         yaxis=dict(autorange="reversed"),
         template="plotly_dark",
-        paper_bgcolor=PLOT_BG,
-        plot_bgcolor=PLOT_BG,
-        font=dict(color=PLOT_FG),
+        paper_bgcolor=db.PLOT_BG,
+        plot_bgcolor=db.PLOT_BG,
+        font=dict(color=db.PLOT_FG),
         height=max(350, len(top) * 28 + 80),
         margin=dict(l=140, r=80, t=50, b=40),
     )
@@ -1453,7 +1185,7 @@ def _plotly_country_bar(series):
 
 def _plotly_choropleth(series):
     import plotly.graph_objects as go
-    iso3   = [_COUNTRY_ISO3.get(c, None) for c in series.index]
+    iso3   = [db._COUNTRY_ISO3.get(c, None) for c in series.index]
     mask   = [i is not None for i in iso3]
     vals   = [v * 100 for v, m in zip(series.values, mask) if m]
     codes  = [c for c, m in zip(iso3, mask) if m]
@@ -1464,7 +1196,7 @@ def _plotly_choropleth(series):
         text=names,
         colorscale=[[0, "#C1CCDA"], [0.4, "#3E5980"], [1, "#092544"]],
         colorbar=dict(title="Weight %", ticksuffix="%",
-                      bgcolor=PLOT_BG, tickfont=dict(color=PLOT_FG)),
+                      bgcolor=db.PLOT_BG, tickfont=dict(color=db.PLOT_FG)),
         hovertemplate="%{text}: %{z:.2f}%<extra></extra>",
         marker_line_color="#333",
         marker_line_width=0.5,
@@ -1476,11 +1208,11 @@ def _plotly_choropleth(series):
             showland=True,  landcolor="#1a1a1a",
             showocean=True, oceancolor="#0f0f0f",
             showcountries=True, countrycolor="#333",
-            bgcolor=PLOT_BG,
+            bgcolor=db.PLOT_BG,
             projection_type="natural earth",
         ),
-        paper_bgcolor=PLOT_BG,
-        font=dict(color=PLOT_FG),
+        paper_bgcolor=db.PLOT_BG,
+        font=dict(color=db.PLOT_FG),
         margin=dict(l=0, r=0, t=10, b=10),
         height=500,
     )
@@ -1488,7 +1220,7 @@ def _plotly_choropleth(series):
 
 def _plotly_sector_bar(series, ticker_detail=None):
     import plotly.graph_objects as go
-    colors = [SECTOR_COLORS.get(s, ACCENT) for s in series.index]
+    colors = [db.SECTOR_COLORS.get(s, db.ACCENT) for s in series.index]
     fig = go.Figure(go.Bar(
         x=series.values * 100,
         y=series.index,
@@ -1502,9 +1234,9 @@ def _plotly_sector_bar(series, ticker_detail=None):
         xaxis=dict(title="Weight (%)", ticksuffix="%", range=[0, (series.values.max() * 100) + 2.5]),
         yaxis=dict(autorange="reversed"),
         template="plotly_dark",
-        paper_bgcolor=PLOT_BG,
-        plot_bgcolor=PLOT_BG,
-        font=dict(color=PLOT_FG),
+        paper_bgcolor=db.PLOT_BG,
+        plot_bgcolor=db.PLOT_BG,
+        font=dict(color=db.PLOT_FG),
         height=max(480, len(series) * 32 + 80),
         margin=dict(l=150, r=50, t=50, b=40),
     )
@@ -1526,7 +1258,7 @@ def _plotly_sector_sunburst(series, ticker_detail, ticker_weights):
         labels.append(f"{sector}<br>{sv*100:.1f}%")
         parents.append("")
         vals.append(0.0)
-        colors_sb.append(SECTOR_COLORS.get(sector, ACCENT))
+        colors_sb.append(db.SECTOR_COLORS.get(sector, db.ACCENT))
 
         for t, breakdown in ticker_detail.items():
             total_t = sum(breakdown.values()) or 1
@@ -1539,7 +1271,7 @@ def _plotly_sector_sunburst(series, ticker_detail, ticker_weights):
                 labels.append(f"{t}<br>{child_val*100:.1f}%")
                 parents.append(sector)
                 vals.append(float(child_val))
-                colors_sb.append(SECTOR_COLORS.get(sector, ACCENT))
+                colors_sb.append(db.SECTOR_COLORS.get(sector, db.ACCENT))
 
     fig = go.Figure(go.Sunburst(
         ids=ids, labels=labels, parents=parents, values=vals,
@@ -1550,8 +1282,8 @@ def _plotly_sector_sunburst(series, ticker_detail, ticker_weights):
         insidetextorientation="radial",
     ))
     fig.update_layout(
-        paper_bgcolor=PLOT_BG,
-        font=dict(color=PLOT_FG),
+        paper_bgcolor=db.PLOT_BG,
+        font=dict(color=db.PLOT_FG),
         margin=dict(l=10, r=10, t=10, b=10),
         height=480,
     )
@@ -1567,7 +1299,7 @@ with tab_alloc:
         with col1:
             ticker_colors = get_ticker_colors_global(tickers, asset_classes, weights_raw)
             fig, ax = plt.subplots(figsize=(6, 5))
-            fig.patch.set_facecolor(PLOT_BG)
+            fig.patch.set_facecolor(db.PLOT_BG)
             draw_pie(ax, weights_raw, tickers, ticker_colors, "By Ticker")
             fig.subplots_adjust(left=0.35)
             st.pyplot(fig)
@@ -1582,7 +1314,7 @@ with tab_alloc:
                 sizes_ac  = list(class_weights.values())
                 ac_colors = [_get_group_color(l) for l in labels_ac]
                 fig, ax = plt.subplots(figsize=(6, 5))
-                fig.patch.set_facecolor(PLOT_BG)
+                fig.patch.set_facecolor(db.PLOT_BG)
                 draw_pie(ax, sizes_ac, labels_ac, ac_colors, "By Asset Class")
                 fig.subplots_adjust(left=0.35)
                 st.pyplot(fig)
@@ -1701,13 +1433,6 @@ with tab_alloc:
             # Load from config file if present, else empty dict
             st.session_state["etf_custom_db"] = _cfg.get("etf_custom_db", {})
 
-        _SECTOR_OPTIONS = [
-            "Information Technology", "Financials", "Health Care",
-            "Industrials", "Consumer Discretionary", "Consumer Staples",
-            "Communication Services", "Energy", "Materials",
-            "Real Estate", "Utilities", "Government", "Currency", "Other",
-        ]
-
         def _parse_weights(df, key_col):
             result = {}
             for _, row in df.iterrows():
@@ -1803,7 +1528,7 @@ with tab_alloc:
                             width='stretch',
                             key=f"etf_sec_{tkey}",
                             column_config={
-                                "Sector":   st.column_config.SelectboxColumn("Sector", options=_SECTOR_OPTIONS, width="medium"),
+                                "Sector":   st.column_config.SelectboxColumn("Sector", options=db._SECTOR_OPTIONS, width="medium"),
                                 "Weight %": st.column_config.NumberColumn("Weight %", min_value=0.0, max_value=100.0, step=0.1, format="%.1f"),
                             },
                             hide_index=True,
@@ -1899,7 +1624,7 @@ with tab_corr:
                     st.warning(f"Only {len(monthly_r) - 1} months of data available.")
                 else:
                     fig, ax = plt.subplots(figsize=(12, 4))
-                    color_cycle = [ACCENT, ACCENT3, ACCENT4, ACCENT2, '#b19cd9']
+                    color_cycle = [db.ACCENT, db.ACCENT3, db.ACCENT4, db.ACCENT2, '#b19cd9']
 
                     # Track the first valid data point (excluding NaN values)
                     first_valid_date = None
@@ -2027,9 +1752,9 @@ with tab_fi:
             has_swr = safe_withdrawal_rate > 0
 
             scenarios = [
-                (lean_fi, "Lean FI",  ACCENT3),
-                (safe_fi, "Safe FI",  ACCENT),
-                (cozy_fi, "Cozy FI",  ACCENT4),
+                (lean_fi, "Lean FI",  db.ACCENT3),
+                (safe_fi, "Safe FI",  db.ACCENT),
+                (cozy_fi, "Cozy FI",  db.ACCENT4),
             ]
 
             # ── Main chart ──────────────────────────────────────────────────────
@@ -2037,9 +1762,9 @@ with tab_fi:
 
             # Shade accumulation vs withdrawal regions
             acc_end_date = proj_dates[withdrawal_start_mo] if not no_withdrawals else proj_dates[-1]
-            ax.axvspan(proj_dates[0], acc_end_date, alpha=0.04, color=ACCENT, zorder=0)
+            ax.axvspan(proj_dates[0], acc_end_date, alpha=0.04, color=db.ACCENT, zorder=0)
             if not no_withdrawals:
-                ax.axvspan(acc_end_date, proj_dates[-1], alpha=0.04, color=ACCENT2, zorder=0)
+                ax.axvspan(acc_end_date, proj_dates[-1], alpha=0.04, color=db.ACCENT2, zorder=0)
                 ax.axvline(acc_end_date, color="white", linewidth=1.2, linestyle=':', alpha=0.6)
 
             # Axis formatter: values are in $k, display as fmt_dollar units
@@ -2203,20 +1928,20 @@ with tab_fi:
 
             fig, ax = plt.subplots(figsize=(12, 5))
 
-            ax.axvspan(proj_dates[0], acc_end_date, alpha=0.04, color=ACCENT, zorder=0)
-            ax.axvspan(acc_end_date, proj_dates[-1], alpha=0.04, color=ACCENT2, zorder=0)
+            ax.axvspan(proj_dates[0], acc_end_date, alpha=0.04, color=db.ACCENT, zorder=0)
+            ax.axvspan(acc_end_date, proj_dates[-1], alpha=0.04, color=db.ACCENT2, zorder=0)
             ax.axvline(acc_end_date, color="white", linewidth=1.0, linestyle=':', alpha=0.5)
 
             for path in mc_paths[:int(n_paths_plot)]:
-                ax.plot(proj_dates, path, alpha=0.04, color=ACCENT, linewidth=0.7)
+                ax.plot(proj_dates, path, alpha=0.04, color=db.ACCENT, linewidth=0.7)
 
             p10 = np.percentile(mc_arr, 10,  axis=0)
             p50 = np.percentile(mc_arr, 50,  axis=0)
             p90 = np.percentile(mc_arr, 90,  axis=0)
-            ax.plot(proj_dates, p50, color=ACCENT,  linewidth=2,   label="Median (50th pct)")
-            ax.plot(proj_dates, p10, color=ACCENT2, linewidth=1.5, linestyle='--', label="Pessimistic (10th pct)")
-            ax.plot(proj_dates, p90, color=ACCENT3, linewidth=1.5, linestyle='--', label="Optimistic (90th pct)")
-            ax.fill_between(proj_dates, p10, p90, alpha=0.08, color=ACCENT)
+            ax.plot(proj_dates, p50, color=db.ACCENT,  linewidth=2,   label="Median (50th pct)")
+            ax.plot(proj_dates, p10, color=db.ACCENT2, linewidth=1.5, linestyle='--', label="Pessimistic (10th pct)")
+            ax.plot(proj_dates, p90, color=db.ACCENT3, linewidth=1.5, linestyle='--', label="Optimistic (90th pct)")
+            ax.fill_between(proj_dates, p10, p90, alpha=0.08, color=db.ACCENT)
             ax.axhline(0, color='white', linewidth=0.6, alpha=0.3)
 
             # % of paths that survive (stay > 0) through full horizon
@@ -2345,7 +2070,7 @@ with tab_opt:
                 _pc1, _pc2 = st.columns(2)
                 with _pc1:
                     fig, ax = plt.subplots(figsize=(6, 5))
-                    fig.patch.set_facecolor(PLOT_BG)
+                    fig.patch.set_facecolor(db.PLOT_BG)
                     draw_pie(ax, _sizes_cur, available, _opt_colors, "Current")
                     fig.subplots_adjust(left=0.35)
                     st.pyplot(fig)
@@ -2353,7 +2078,7 @@ with tab_opt:
                 with _pc2:
                     _w_sh_colors = get_ticker_colors_global(available, asset_classes, list(_w_sh))
                     fig, ax = plt.subplots(figsize=(6, 5))
-                    fig.patch.set_facecolor(PLOT_BG)
+                    fig.patch.set_facecolor(db.PLOT_BG)
                     draw_pie(ax, list(_w_sh), available, _w_sh_colors, "Max Sharpe", filter_zero=True)
                     fig.subplots_adjust(left=0.35)
                     st.pyplot(fig)
@@ -2380,7 +2105,7 @@ with tab_opt:
                 _pc3, _pc4 = st.columns(2)
                 with _pc3:
                     fig, ax = plt.subplots(figsize=(6, 5))
-                    fig.patch.set_facecolor(PLOT_BG)
+                    fig.patch.set_facecolor(db.PLOT_BG)
                     draw_pie(ax, _sizes_cur, available, _opt_colors, "Current")
                     fig.subplots_adjust(left=0.35)
                     st.pyplot(fig)
@@ -2388,7 +2113,7 @@ with tab_opt:
                 with _pc4:
                     _w_mv_colors = get_ticker_colors_global(available, asset_classes, list(_w_mv))
                     fig, ax = plt.subplots(figsize=(6, 5))
-                    fig.patch.set_facecolor(PLOT_BG)
+                    fig.patch.set_facecolor(db.PLOT_BG)
                     draw_pie(ax, list(_w_mv), available, _w_mv_colors, "Min Volatility", filter_zero=True)
                     fig.subplots_adjust(left=0.35)
                     st.pyplot(fig)
@@ -2402,13 +2127,13 @@ with tab_opt:
                 plt.colorbar(sc, ax=ax, label="Sharpe Ratio")
                 # Current portfolio
                 ax.scatter(_v_cur * 100, _r_cur * 100, marker="o", s=80,
-                           color=ACCENT2, zorder=5, label="Current portfolio")
+                           color=db.ACCENT2, zorder=5, label="Current portfolio")
                 # Max Sharpe point
                 ax.scatter(_v_sh * 100, _r_sh * 100, marker="D", s=50,
-                           color=ACCENT, zorder=5, label=f"Max Sharpe ({_s_sh:.2f})")
+                           color=db.ACCENT, zorder=5, label=f"Max Sharpe ({_s_sh:.2f})")
                 # Min Vol point
                 ax.scatter(_v_mv * 100, _r_mv * 100, marker="s", s=55,
-                           color=ACCENT3, zorder=5, label=f"Min Volatility")
+                           color=db.ACCENT3, zorder=5, label=f"Min Volatility")
                 ax.set_xlabel("Annual Volatility")
                 ax.set_ylabel("Annual Return")
                 ax.set_title("Efficient Frontier")
@@ -2452,7 +2177,7 @@ with tab_opt:
                 _fig3d.add_trace(go.Scatter3d(
                     x=[_v_cur * 100], y=[_r_cur * 100], z=[_cur_sharpe],
                     mode="markers",
-                    marker=dict(size=8, color=ACCENT2, symbol="circle"),
+                    marker=dict(size=8, color=db.ACCENT2, symbol="circle"),
                     name="Current portfolio",
                     hovertemplate=f"Current<br>Vol: {_v_cur*100:.1f}%<br>Return: {_r_cur*100:.1f}%<br>Sharpe: {_cur_sharpe:.2f}<extra></extra>",
                 ))
@@ -2461,7 +2186,7 @@ with tab_opt:
                 _fig3d.add_trace(go.Scatter3d(
                     x=[_v_sh * 100], y=[_r_sh * 100], z=[_s_sh],
                     mode="markers",
-                    marker=dict(size=6, color=ACCENT, symbol="diamond"),
+                    marker=dict(size=6, color=db.ACCENT, symbol="diamond"),
                     name=f"Max Sharpe ({_s_sh:.2f})",
                     hovertemplate=f"Max Sharpe<br>Vol: {_v_sh*100:.1f}%<br>Return: {_r_sh*100:.1f}%<br>Sharpe: {_s_sh:.2f}<extra></extra>",
                 ))
@@ -2470,7 +2195,7 @@ with tab_opt:
                 _fig3d.add_trace(go.Scatter3d(
                     x=[_v_mv * 100], y=[_r_mv * 100], z=[_s_mv],
                     mode="markers",
-                    marker=dict(size=8, color=ACCENT3, symbol="square"),
+                    marker=dict(size=8, color=db.ACCENT3, symbol="square"),
                     name="Min Volatility",
                     hovertemplate=f"Min Vol<br>Vol: {_v_mv*100:.1f}%<br>Return: {_r_mv*100:.1f}%<br>Sharpe: {_s_mv:.2f}<extra></extra>",
                 ))
@@ -2478,15 +2203,15 @@ with tab_opt:
                 _fig3d.update_layout(
                     title="            Efficient Frontier 3D",
                     scene=dict(
-                        xaxis=dict(title="Volatility",  backgroundcolor=PLOT_BG, tickformat=".0f", ticksuffix="%", gridcolor="#2a2a2a", color=PLOT_FG),
-                        yaxis=dict(title="Return",      backgroundcolor=PLOT_BG, tickformat=".0f", ticksuffix="%", gridcolor="#2a2a2a", color=PLOT_FG),
-                        zaxis=dict(title="Sharpe",      backgroundcolor=PLOT_BG, tickformat=".1f", gridcolor="#2a2a2a", color=PLOT_FG),
-                        bgcolor=PLOT_BG,
+                        xaxis=dict(title="Volatility",  backgroundcolor=db.PLOT_BG, tickformat=".0f", ticksuffix="%", gridcolor="#2a2a2a", color=db.PLOT_FG),
+                        yaxis=dict(title="Return",      backgroundcolor=db.PLOT_BG, tickformat=".0f", ticksuffix="%", gridcolor="#2a2a2a", color=db.PLOT_FG),
+                        zaxis=dict(title="Sharpe",      backgroundcolor=db.PLOT_BG, tickformat=".1f", gridcolor="#2a2a2a", color=db.PLOT_FG),
+                        bgcolor=db.PLOT_BG,
                     ),
-                    paper_bgcolor=PLOT_BG,
-                    plot_bgcolor=PLOT_BG,
-                    font=dict(color=PLOT_FG),
-                    legend=dict(bgcolor=PLOT_BG, bordercolor="#2a2a2a"),
+                    paper_bgcolor=db.PLOT_BG,
+                    plot_bgcolor=db.PLOT_BG,
+                    font=dict(color=db.PLOT_FG),
+                    legend=dict(bgcolor=db.PLOT_BG, bordercolor="#2a2a2a"),
                     height=650,
                 )
                 st.plotly_chart(_fig3d, width='stretch')
