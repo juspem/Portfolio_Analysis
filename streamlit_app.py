@@ -643,7 +643,7 @@ with tab_overview:
                 if positive_good:
                     cls = "positive" if value > 0 else "negative"
                 else:
-                    cls = "negative" if value > 0 else "positive"
+                    cls = "negative"
             else:
                 display = "N/A"
                 cls = ""
@@ -984,8 +984,8 @@ with tab_bench:
         xlim = max(abs(b_ret.values).max() * 100, 1)
         x_line = np.linspace(-xlim, xlim, 100)
         b_val  = m["Beta"]
-        a_val  = m["Alpha (Jensen)"] / 252
-        ax.plot(x_line, b_val * x_line + a_val * 100, color=ACCENT2, linewidth=1.5,
+        a_val  = (np.mean(p_ret.values) - b_val * np.mean(b_ret.values)) * 100
+        ax.plot(x_line, b_val * x_line + a_val, color=ACCENT2, linewidth=1.5,
                 label=f"Regression (β={b_val:.2f})", alpha=0.4)
         ax.axhline(0, color='#505050', linewidth=1, alpha=0.5)
         ax.axvline(0, color='#505050', linewidth=1, alpha=0.5)
