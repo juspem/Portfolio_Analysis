@@ -2526,7 +2526,7 @@ with tab_report:
                     tmp = tempfile.NamedTemporaryFile(suffix=".html", delete=False)
                     tmp_path = tmp.name
                     tmp.close()  # Close before QuantStats writes (required on Windows)
-                    qs.reports.html(p_ret, benchmark=b_ret, output=tmp_path, title="Portfolio Report")
+                    qs.reports.html(p_ret, benchmark=b_ret, output=tmp_path, title="Portfolio Report", rf=risk_free_rate)
                     with open(tmp_path, "r", encoding="utf-8") as f:
                         html_content = f.read()
                     os.unlink(tmp_path)
