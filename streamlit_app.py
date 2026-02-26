@@ -512,14 +512,16 @@ if returns.shape[1] != len(w_aligned):
 portfolio_returns = returns.dot(w_aligned)
 portfolio_returns = pd.Series(portfolio_returns, name="Portfolio")
 
+p_ret = portfolio_returns  # aina täysi historia — ei koskaan leikata benchmarkin mukaan
+
 if bench_raw is not None and not bench_raw.empty:
     bench_returns = bench_raw.pct_change(fill_method=None).dropna()
-    common_idx    = portfolio_returns.index.intersection(bench_returns.index)
-    p_ret         = portfolio_returns.loc[common_idx]
+    common_idx    = p_ret.index.intersection(bench_returns.index)
+    p_ret_c       = p_ret.loc[common_idx]   # leikattu versio vain benchmark-vertailuun
     b_ret         = bench_returns.loc[common_idx]
 else:
-    p_ret = portfolio_returns
-    b_ret = None
+    p_ret_c = p_ret
+    b_ret   = None
 
 
 # ── Helper functions ──────────────────────────────────────────────────────────
@@ -587,8 +589,10 @@ def down_capture(p, b):
 
 
 # ── Compute all metrics ────────────────────────────────────────────────────────
+# Portfolio-only metrics → p_ret (täysi historia, ei riipu benchmarkista)
+# Cross/benchmark metrics → p_ret_c (leikattu yhteiselle aikavälille)
 _has_bench = b_ret is not None
-_corr_coef = float(np.corrcoef(p_ret, b_ret)[0, 1]) if _has_bench else np.nan
+_corr_coef = float(np.corrcoef(p_ret_c, b_ret)[0, 1]) if _has_bench else np.nan
 m = {
     "Annual Return":       ann_return(p_ret),
     "Annual Volatility":   ann_vol(p_ret),
@@ -598,16 +602,16 @@ m = {
     "Calmar Ratio":        calmar(p_ret),
     "VaR 95%":             var_95(p_ret),
     "CVaR 95%":            cvar_95(p_ret),
-    "Beta":                beta(p_ret.values, b_ret.values)          if _has_bench else np.nan,
-    "Alpha (Jensen)":      alpha_jensen(p_ret.values, b_ret.values)  if _has_bench else np.nan,
-    "Tracking Error":      tracking_error(p_ret, b_ret)              if _has_bench else np.nan,
-    "Information Ratio":   information_ratio(p_ret, b_ret)           if _has_bench else np.nan,
-    "Up Capture":          up_capture(p_ret, b_ret)                  if _has_bench else np.nan,
-    "Down Capture":        down_capture(p_ret, b_ret)                if _has_bench else np.nan,
-    "Bench Annual Return": ann_return(b_ret)                         if _has_bench else np.nan,
-    "Bench Volatility":    ann_vol(b_ret)                            if _has_bench else np.nan,
-    "Bench Sharpe":        sharpe(b_ret)                             if _has_bench else np.nan,
-    "Bench Max Drawdown":  max_drawdown(b_ret)                       if _has_bench else np.nan,
+    "Beta":                beta(p_ret_c.values, b_ret.values)          if _has_bench else np.nan,
+    "Alpha (Jensen)":      alpha_jensen(p_ret_c.values, b_ret.values)  if _has_bench else np.nan,
+    "Tracking Error":      tracking_error(p_ret_c, b_ret)              if _has_bench else np.nan,
+    "Information Ratio":   information_ratio(p_ret_c, b_ret)           if _has_bench else np.nan,
+    "Up Capture":          up_capture(p_ret_c, b_ret)                  if _has_bench else np.nan,
+    "Down Capture":        down_capture(p_ret_c, b_ret)                if _has_bench else np.nan,
+    "Bench Annual Return": ann_return(b_ret)                           if _has_bench else np.nan,
+    "Bench Volatility":    ann_vol(b_ret)                              if _has_bench else np.nan,
+    "Bench Sharpe":        sharpe(b_ret)                               if _has_bench else np.nan,
+    "Bench Max Drawdown":  max_drawdown(b_ret)                         if _has_bench else np.nan,
 }
 
 
