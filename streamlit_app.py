@@ -82,6 +82,8 @@ st.set_page_config(
 
 # ── Matplotlib dark theme ─────────────────────────────────────────────────────
 plt.style.use('dark_background')
+plt.close('all')  # free any figures left open from previous rerun
+plt.rcParams['figure.max_open_warning'] = 0  # suppress warning noise
 
 def apply_style(fig, ax_list=None):
     fig.patch.set_facecolor(db.PLOT_BG)
@@ -430,6 +432,7 @@ with st.spinner("Fetching market data..."):
 
 # ── Per-ticker currency detection & FX conversion ────────────────────────────
 @st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, ttl=86400)
 def get_ticker_currency(ticker):
     """Return the currency yFinance reports for this ticker (e.g. 'EUR', 'USD')."""
     try:
@@ -447,18 +450,17 @@ def get_fx_rate(from_currency, to_currency, date_str):
     target = pd.Timestamp(date_str)
     start  = (target - pd.Timedelta(days=7)).strftime("%Y-%m-%d")
     end    = (target + pd.Timedelta(days=2)).strftime("%Y-%m-%d")
-    while bench_raw is not None:
-        try:
-            s = yf.download(pair, start=start, end=end, auto_adjust=True, progress=False)
-            if isinstance(s.columns, pd.MultiIndex):
-                s = s["Close"]
-            s = s.squeeze().dropna()
-            if s.empty:
-                return 1.0
-            idx = s.index.get_indexer([target], method="nearest")[0]
-            return float(s.iloc[idx])
-        except Exception:
+    try:
+        s = yf.download(pair, start=start, end=end, auto_adjust=True, progress=False)
+        if isinstance(s.columns, pd.MultiIndex):
+            s = s["Close"]
+        s = s.squeeze().dropna()
+        if s.empty:
             return 1.0
+        idx = s.index.get_indexer([target], method="nearest")[0]
+        return float(s.iloc[idx])
+    except Exception:
+        return 1.0
 
 # Detect each ticker's native currency
 with st.spinner("Detecting ticker currencies..."):
@@ -715,7 +717,7 @@ with tab_overview:
         dollar_axis(ax)
         apply_style(fig, [ax])
         st.pyplot(fig)
-        plt.close()
+        plt.close("all")
 
 gc.collect()
 
@@ -762,7 +764,7 @@ with tab_perf:
         apply_style(fig, axes)
         fig.tight_layout(pad=2)
         st.pyplot(fig)
-        plt.close()
+        plt.close("all")
 
         # Monthly returns heatmap
         st.markdown('<div class="section-header">Monthly Returns Heatmap</div>', unsafe_allow_html=True)
@@ -789,7 +791,7 @@ with tab_perf:
             ax.set_xlabel("")
             apply_style(fig, [ax])
             st.pyplot(fig)
-            plt.close()
+            plt.close("all")
 
         # Annual returns
         st.markdown('<div class="section-header">Annual Returns</div>', unsafe_allow_html=True)
@@ -804,7 +806,7 @@ with tab_perf:
         pct_axis(ax, decimals=0)
         apply_style(fig, [ax])
         st.pyplot(fig)
-        plt.close()
+        plt.close("all")
 
 gc.collect()
 
@@ -859,7 +861,7 @@ with tab_risk:
         pct_axis(ax, decimals=1)
         apply_style(fig, [ax])
         st.pyplot(fig)
-        plt.close()
+        plt.close("all")
 
         # Return distribution
         st.markdown('<div class="section-header">Return Distribution</div>', unsafe_allow_html=True)
@@ -876,7 +878,7 @@ with tab_risk:
         ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"{x:.1f}%"))
         apply_style(fig, [ax])
         st.pyplot(fig)
-        plt.close()
+        plt.close("all")
 
         # Rolling Sharpe
         st.markdown('<div class="section-header">252-Day Rolling Sharpe Ratio</div>', unsafe_allow_html=True)
@@ -891,7 +893,7 @@ with tab_risk:
             ax.set_ylabel("Sharpe Ratio")
             apply_style(fig, [ax])
             st.pyplot(fig)
-            plt.close()
+            plt.close("all")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -944,7 +946,7 @@ with tab_bench:
         dollar_axis(ax)
         apply_style(fig, [ax])
         st.pyplot(fig)
-        plt.close()
+        plt.close("all")
 
         # Rolling Beta
         st.markdown('<div class="section-header">252-Day Rolling Beta</div>', unsafe_allow_html=True)
@@ -1020,7 +1022,7 @@ with tab_bench:
             ax.set_ylabel("Beta")
             apply_style(fig, [ax])
             st.pyplot(fig)
-            plt.close()
+            plt.close("all")
 
         # Scatter
         st.markdown('<div class="section-header">Excess Returns Scatter</div>', unsafe_allow_html=True)
@@ -1053,7 +1055,7 @@ with tab_bench:
         _sc_gap = max(1, 12 - _sc_size)
         _col = st.columns([_sc_size, _sc_gap])[0]
         with _col: st.pyplot(fig, use_container_width=False)
-        plt.close()
+        plt.close("all")
 
 
 # ── Shared pie chart color helpers & draw_pie (used in Allocation + Optimization) ──
@@ -1353,7 +1355,7 @@ with tab_alloc:
             draw_pie(ax, weights_raw, tickers, ticker_colors, "By Ticker")
             fig.subplots_adjust(left=0.35)
             st.pyplot(fig)
-            plt.close()
+            plt.close("all")
         with col2:
             class_weights = defaultdict(float)
             for ticker, weight in portfolio.items():
@@ -1368,7 +1370,7 @@ with tab_alloc:
                 draw_pie(ax, sizes_ac, labels_ac, ac_colors, "By Asset Class")
                 fig.subplots_adjust(left=0.35)
                 st.pyplot(fig)
-                plt.close()
+                plt.close("all")
 
         st.markdown('<div class="section-header">Holdings</div>', unsafe_allow_html=True)
         holdings_df = pd.DataFrame({
@@ -1402,7 +1404,7 @@ with tab_alloc:
             country_exp, country_per_ticker = _agg_exposure(available, list(w_aligned), 0)
 
         if country_exp.empty:
-            st.warning("Could not determine country exposure. Check that tickers are correct.")
+            st.warning("Could not determine country exposure. Check the ticker database.")
         else:
             threshold = 0.003
             # 1. Filter countries above threshold and remove potential "Other" duplicates
@@ -1440,7 +1442,7 @@ with tab_alloc:
             sector_exp, sector_per_ticker = _agg_exposure(available, list(w_aligned), 1)
 
         if sector_exp.empty:
-            st.warning("Could not determine sector exposure. Check that tickers are correct.")
+            st.warning("Could not determine sector exposure. Check the ticker database.")
         else:
             threshold = 0.003
             main_s  = sector_exp[sector_exp >= threshold]
@@ -1663,7 +1665,7 @@ with tab_corr:
             _cm_gap = max(1, 12 - cm_size)
             _col = st.columns([cm_size, _cm_gap])[0]
             with _col: st.pyplot(fig, use_container_width=False)
-            plt.close()
+            plt.close("all")
 
             if len(tickers) >= 2:
                 st.markdown('<div class="section-header">Rolling Correlation</div>', unsafe_allow_html=True)
@@ -1709,7 +1711,7 @@ with tab_corr:
                         line.set_alpha(0.5)
                     apply_style(fig, [ax])
                     st.pyplot(fig)
-                    plt.close()
+                    plt.close("all")
 
         render_correlations()
 
@@ -1910,7 +1912,7 @@ with tab_fi:
                         alpha=0.9, va='top', ha='left')
             ax.margins(x=0)
             st.pyplot(fig)
-            plt.close()
+            plt.close("all")
 
             # ── FI Summary table ────────────────────────────────────────────────
             st.markdown('<div class="section-header">FI Goals Summary</div>', unsafe_allow_html=True)
@@ -2010,7 +2012,7 @@ with tab_fi:
             ax.margins(x=0.0015)
             apply_style(fig, [ax])
             st.pyplot(fig)
-            plt.close()
+            plt.close("all")
 
             st.caption(
                 f"At year {total_horizon_years} - "
@@ -2124,7 +2126,7 @@ with tab_opt:
                     draw_pie(ax, _sizes_cur, available, _opt_colors, "Current")
                     fig.subplots_adjust(left=0.35)
                     st.pyplot(fig)
-                    plt.close()
+                    plt.close("all")
                 with _pc2:
                     _w_sh_colors = get_ticker_colors_global(available, asset_classes, list(_w_sh))
                     fig, ax = plt.subplots(figsize=(6, 5))
@@ -2132,7 +2134,7 @@ with tab_opt:
                     draw_pie(ax, list(_w_sh), available, _w_sh_colors, "Max Sharpe", filter_zero=True)
                     fig.subplots_adjust(left=0.35)
                     st.pyplot(fig)
-                    plt.close()
+                    plt.close("all")
 
             # ── Min Volatility ───────────────────────────────────────────────────
             with opt_subtabs[1]:
@@ -2159,7 +2161,7 @@ with tab_opt:
                     draw_pie(ax, _sizes_cur, available, _opt_colors, "Current")
                     fig.subplots_adjust(left=0.35)
                     st.pyplot(fig)
-                    plt.close()
+                    plt.close("all")
                 with _pc4:
                     _w_mv_colors = get_ticker_colors_global(available, asset_classes, list(_w_mv))
                     fig, ax = plt.subplots(figsize=(6, 5))
@@ -2167,7 +2169,7 @@ with tab_opt:
                     draw_pie(ax, list(_w_mv), available, _w_mv_colors, "Min Volatility", filter_zero=True)
                     fig.subplots_adjust(left=0.35)
                     st.pyplot(fig)
-                    plt.close()
+                    plt.close("all")
 
             # ── Efficient Frontier 2D ────────────────────────────────────────────
             with opt_subtabs[2]:
@@ -2193,7 +2195,7 @@ with tab_opt:
                 apply_style(fig, [ax])
                 fig.tight_layout()
                 st.pyplot(fig)
-                plt.close()
+                plt.close("all")
                 st.caption(
                     "Each dot = randomly generated portfolio. Colour = Sharpe ratio. "
                     "Red star = your current portfolio. Green triangle = Max Sharpe. Blue diamond = Min Volatility."
