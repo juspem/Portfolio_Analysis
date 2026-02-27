@@ -10,3 +10,4 @@ plotly
 scipy
 jupyter
 ipykernel
+statsmodels

@@ -948,18 +948,68 @@ with tab_bench:
 
         # Rolling Beta
         st.markdown('<div class="section-header">252-Day Rolling Beta</div>', unsafe_allow_html=True)
-        def rolling_beta(window=252):
-            betas = []
-            idx   = []
-            for i in range(window, len(p_ret)):
-                pw = p_ret.iloc[i-window:i].values
-                bw = b_ret.iloc[i-window:i].values
-                cov = np.cov(pw, bw)
-                betas.append(cov[0,1] / cov[1,1] if cov[1,1] != 0 else np.nan)
-                idx.append(p_ret.index[i])
-            return pd.Series(betas, index=idx)
 
-        rb = rolling_beta()
+        import statsmodels.api as sm
+
+        def rolling_beta_ols(p_ret, b_ret, window=252, min_obs=100):
+            """
+            Compute rolling beta using OLS regression (most accurate / standard method)
+            
+            Parameters:
+            -----------
+            p_ret : pd.Series
+                Portfolio / asset daily returns (indexed by date)
+            b_ret : pd.Series
+                Benchmark / market daily returns (same index)
+            window : int, default 252
+                Rolling window length in trading days (~1 year)
+            min_obs : int, default 100
+                Minimum number of observations required to fit regression
+            
+            Returns:
+            --------
+            pd.Series
+                Rolling beta values, indexed by the end date of each window
+            """
+            if len(p_ret) == 0 or len(b_ret) == 0:
+                return pd.Series(dtype=float, name='rolling_beta')
+            
+            # Align series and remove rows where either is NaN
+            df = pd.DataFrame({'port': p_ret, 'mkt': b_ret}).dropna()
+            
+            if len(df) < min_obs:
+                return pd.Series(dtype=float, name='rolling_beta')
+            
+            p_ret = df['port']
+            b_ret = df['mkt']
+            
+            betas = []
+            dates = []
+            
+            for i in range(window - 1, len(p_ret)):
+                # Take exactly the same time window from both series
+                window_port = p_ret.iloc[i - window + 1 : i + 1]
+                window_mkt  = b_ret.iloc[i - window + 1 : i + 1]
+                
+                if len(window_port) < min_obs:
+                    betas.append(np.nan)
+                else:
+                    # OLS: port_return = alpha + beta * market_return + error
+                    X = sm.add_constant(window_mkt.values)      # add intercept (alpha)
+                    y = window_port.values
+                    
+                    try:
+                        model = sm.OLS(y, X).fit()
+                        beta = model.params[1]                  # slope = beta
+                        betas.append(beta)
+                    except:
+                        betas.append(np.nan)
+                
+                dates.append(p_ret.index[i])
+            
+            return pd.Series(betas, index=dates, name='rolling_beta')
+        
+        rb = rolling_beta_ols(p_ret, b_ret)
         if rb.dropna().empty:
             st.caption("Not enough data for 252-day rolling Beta.")
         else:
