@@ -1041,10 +1041,9 @@ with tab_bench:
         ax.set_xlabel(f"{benchmark_ticker} Daily Return (%)")
         ax.set_ylabel("Portfolio Daily Return")
         ax.set_title("Portfolio vs Benchmark")
-        legend_loc = "upper left" if b_val >= 0 else "upper right"
-        leg = ax.legend(fontsize=10, loc=legend_loc, framealpha=0.6)
+        leg = ax.legend(fontsize=10, loc='upper left', framealpha=0.5)
         for text in leg.get_texts():
-            text.set_alpha(0.6)
+            text.set_alpha(0.75)
         ax.set_xlim(-xlim, xlim)
         ax.set_ylim(-xlim, xlim)
         pct_axis(ax, decimals=1)
@@ -1704,11 +1703,11 @@ with tab_corr:
                     ax.set_ylim(-1.05, 1.05)
                     ax.set_ylabel("Correlation")
                     ax.set_title(f"{window_size}-Month Rolling Correlation")
-                    leg = ax.legend(fontsize=6, loc='upper left', framealpha=0.3)
+                    leg = ax.legend(fontsize=6, loc='best', framealpha=0.5)
                     for text in leg.get_texts():
-                        text.set_alpha(0.5)
+                        text.set_alpha(0.75)
                     for line in leg.get_lines():
-                        line.set_alpha(0.5)
+                        line.set_alpha(0.75)
                     apply_style(fig, [ax])
                     st.pyplot(fig)
                     plt.close("all")
@@ -1898,7 +1897,7 @@ with tab_fi:
                 f"FI Forecast - {return_label} return  |  "
                 f"${monthly_investment}/mo contribution until yr {withdrawal_start_year}"
             )
-            ax.legend(fontsize=9, loc='upper left')
+            ax.legend(fontsize=9, loc='upper left', framealpha=0.5)
             apply_style(fig, [ax])
 
             # Now annotate the withdrawal start line after axes are scaled
