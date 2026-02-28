@@ -23,6 +23,7 @@ SECTOR_COLORS = {
     "Utilities": "#80c41c",
     "Government": "#2c3e8c",
     "Cash": "#1a7a3c", "Currency": "#1a7a3c",
+    "Crypto": "#F7931A", "Crypto Currency": "#F7931A",
     "Other": "#444444",
 }
 
@@ -74,7 +75,7 @@ _SECTOR_OPTIONS = [
     "Information Technology", "Financials", "Health Care",
     "Industrials", "Consumer Discretionary", "Consumer Staples",
     "Communication Services", "Energy", "Materials",
-    "Real Estate", "Utilities", "Government", "Currency", "Other",
+    "Real Estate", "Utilities", "Government", "Currency", "Crypto", "Other",
 ]
 
 # ── Known ETF country weights (normalised to sum≈1) ──────────────────────────
