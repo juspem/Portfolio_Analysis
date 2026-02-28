@@ -96,8 +96,8 @@ def apply_style(fig, ax_list=None):
         ax.yaxis.label.set_color(db.PLOT_FG)
         ax.title.set_color(db.PLOT_FG)
         for spine in ax.spines.values():
-            spine.set_edgecolor('#2a2a2a')
-        ax.grid(True, color='#2a2a2a', linewidth=0.5, alpha=0.8)
+            spine.set_edgecolor(db.DARKER)
+        ax.grid(True, color=db.DARKER, linewidth=0.5, alpha=0.8)
 
 # ── Styling ───────────────────────────────────────────────────────────────────
 
@@ -149,11 +149,11 @@ h1, h2, h3 {{
 
 section[data-testid="stSidebar"] {{
     background-color: {'#161616'};
-    border-right: 1px solid {'#2a2a2a'};
+    border-right: 1px solid {db.DARKER};
 }}
 
 .metric-card {{
-    background: {'#1a1a1a'};
+    background: {db.PLOT_BG};
     border: 1px solid {db.DARKER};
     border-left: 3px solid {db.ACCENT};
     padding: 1rem 1.2rem;
@@ -694,10 +694,29 @@ with tab_overview:
         st.markdown('<div class="section-header">Holdings - Links to Yahoo Finance</div>', unsafe_allow_html=True)
 
         # Yahoo Finance links
-        links_html = '<div style="display:flex;flex-wrap:wrap;gap:0.5rem;margin-bottom:1.5rem;">'
+        links_html = f'''
+        <style>
+        .yf-link {{
+            font-family: IBM Plex Mono, monospace;
+            font-size: 0.8rem;
+            color: {db.PLOT_FG} !important;
+            background: {db.PLOT_BG} !important;
+            border: 1px solid {db.DARKER} !important;
+            padding: 0.35rem 0.75rem;
+            text-decoration: none !important;
+            letter-spacing: 0.05em;
+            border-radius: 0;
+            outline: none;
+        }}
+        .yf-link:hover {{
+            color: {db.ACCENT2} !important;
+        }}
+        </style>
+        <div style="display:flex;flex-wrap:wrap;gap:0.5rem;margin-bottom:1.5rem;">
+        '''
         for t in tickers:
             url = f'https://finance.yahoo.com/quote/{t}'
-            links_html += f'<a href="{url}" target="_blank" style="font-family:IBM Plex Mono,monospace;font-size:0.8rem;color:#c8f55a;background:#1a1a1a;border:1px solid #2a2a2a;padding:0.35rem 0.75rem;text-decoration:none;letter-spacing:0.05em;">{t}</a>'
+            links_html += f'<a href="{url}" target="_blank" class="yf-link">{t}</a>'
         links_html += '</div>'
         st.markdown(links_html, unsafe_allow_html=True)
 
@@ -706,8 +725,10 @@ with tab_overview:
         fig, ax = plt.subplots(figsize=(12, 4))
         ax.plot(cum_p.index, cum_p.values, color=db.ACCENT,  linewidth=2,   label="Portfolio")
         if cum_b is not None:
-            ax.plot(cum_b.index, cum_b.values, color=db.ACCENT3, linewidth=1.5, label=benchmark_ticker, alpha=0.7)
-        ax.fill_between(cum_p.index, initial_investment_native, cum_p.values, alpha=0.1, color=db.ACCENT)
+            ax.plot(cum_b.index, cum_b.values, color=db.ACCENT3,
+                    linewidth=1.5, label=benchmark_ticker, alpha=0.7)
+        ax.fill_between(cum_p.index, initial_investment_native,
+                        cum_p.values, alpha=0.1, color=db.ACCENT)
         ax.set_ylabel("Value")
         ax.legend(fontsize=9)
         date_min = cum_p.index.min()
@@ -1119,8 +1140,8 @@ def draw_pie(ax, sizes, labels, colors, title, filter_zero=False):
         bbox_to_anchor=(-0.45, 0.5),
         fontsize=9,
         frameon=True,
-        facecolor='#1a1a1a',
-        edgecolor='#2a2a2a',
+        facecolor=db.PLOT_BG,
+        edgecolor=db.DARKER,
         labelcolor=db.PLOT_FG,
     )
     ax.set_title(title, color=db.PLOT_FG, pad=12, loc='center')
@@ -1256,7 +1277,7 @@ def _plotly_choropleth(series):
         geo=dict(
             showframe=False, showcoastlines=True,
             coastlinecolor="#333",
-            showland=True,  landcolor="#1a1a1a",
+            showland=True,  landcolor=db.PLOT_BG,
             showocean=True, oceancolor="#0f0f0f",
             showcountries=True, countrycolor="#333",
             bgcolor=db.PLOT_BG,
@@ -2254,15 +2275,15 @@ with tab_opt:
                 _fig3d.update_layout(
                     title="            Efficient Frontier 3D",
                     scene=dict(
-                        xaxis=dict(title="Volatility",  backgroundcolor=db.PLOT_BG, tickformat=".0f", ticksuffix="%", gridcolor="#2a2a2a", color=db.PLOT_FG),
-                        yaxis=dict(title="Return",      backgroundcolor=db.PLOT_BG, tickformat=".0f", ticksuffix="%", gridcolor="#2a2a2a", color=db.PLOT_FG),
-                        zaxis=dict(title="Sharpe",      backgroundcolor=db.PLOT_BG, tickformat=".1f", gridcolor="#2a2a2a", color=db.PLOT_FG),
+                        xaxis=dict(title="Volatility",  backgroundcolor=db.PLOT_BG, tickformat=".0f", ticksuffix="%", gridcolor=db.DARKER, color=db.PLOT_FG),
+                        yaxis=dict(title="Return",      backgroundcolor=db.PLOT_BG, tickformat=".0f", ticksuffix="%", gridcolor=db.DARKER, color=db.PLOT_FG),
+                        zaxis=dict(title="Sharpe",      backgroundcolor=db.PLOT_BG, tickformat=".1f", gridcolor=db.DARKER, color=db.PLOT_FG),
                         bgcolor=db.PLOT_BG,
                     ),
                     paper_bgcolor=db.PLOT_BG,
                     plot_bgcolor=db.PLOT_BG,
                     font=dict(color=db.PLOT_FG),
-                    legend=dict(bgcolor=db.PLOT_BG, bordercolor="#2a2a2a"),
+                    legend=dict(bgcolor=db.PLOT_BG, bordercolor=db.DARKER),
                     height=650,
                 )
                 st.plotly_chart(_fig3d, width='stretch')
