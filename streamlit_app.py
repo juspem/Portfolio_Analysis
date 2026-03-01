@@ -730,11 +730,35 @@ with tab_overview:
         ax.fill_between(cum_p.index, initial_investment_native,
                         cum_p.values, alpha=0.1, color=db.ACCENT)
         ax.set_ylabel("Value")
-        ax.legend(fontsize=9)
+        ax.legend(fontsize=9, loc='upper left')
         date_min = cum_p.index.min()
         date_max = cum_p.index.max()
         date_range = date_max - date_min
         ax.set_xlim(date_min, date_max + (date_range * 0.01))
+        dollar_axis(ax)
+        apply_style(fig, [ax])
+        st.pyplot(fig)
+        plt.close("all")
+
+        # ── Per-ticker cumulative growth chart ────────────────────────────────
+        st.markdown('<div class="section-header">Per-Ticker Cumulative Growth</div>', unsafe_allow_html=True)
+
+        _ticker_colors = [db.ACCENT, db.ACCENT3, db.ACCENT4, db.ACCENT2,
+                          '#b19cd9', '#f4a261', '#e9c46a', '#2a9d8f']
+        fig, ax = plt.subplots(figsize=(12, 4))
+        for _i, _t in enumerate(available):
+            _r = returns[_t].dropna()
+            if len(_r) < 2:
+                continue
+            _cum_t = (1 + _r).cumprod() * initial_investment_native
+            _color = _ticker_colors[_i % len(_ticker_colors)]
+            ax.plot(_cum_t.index, _cum_t.values, linewidth=1.5,
+                    color=_color, label=_t, alpha=0.9)
+        ax.set_ylabel("Value")
+        ax.legend(fontsize=8, loc='upper left')
+        _date_min = returns.index.min()
+        _date_max = returns.index.max()
+        ax.set_xlim(_date_min, _date_max + (_date_max - _date_min) * 0.01)
         dollar_axis(ax)
         apply_style(fig, [ax])
         st.pyplot(fig)
@@ -878,7 +902,7 @@ with tab_risk:
                     right=dd.index.max() + (dd.index.max() - dd.index.min()) * 0.0015)
         ax.set_ylabel("Drawdown")
         ax.set_title("Drawdown Chart")
-        ax.legend(fontsize=9)
+        ax.legend(fontsize=9, loc='lower left', framealpha=0.5)
         pct_axis(ax, decimals=1)
         apply_style(fig, [ax])
         st.pyplot(fig)
@@ -895,7 +919,7 @@ with tab_risk:
         ax.set_xlabel("Daily Return")
         ax.set_ylabel("Frequency")
         ax.set_title("Return Distribution")
-        ax.legend(fontsize=9)
+        ax.legend(fontsize=9, loc='upper left', framealpha=0.5)
         ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"{x:.1f}%"))
         apply_style(fig, [ax])
         st.pyplot(fig)
@@ -963,7 +987,7 @@ with tab_bench:
         ax.set_ylabel("Value")
         ax.set_title("Cumulative Growth Comparison")
 
-        ax.legend(fontsize=9)
+        ax.legend(fontsize=9, framealpha=0.5)
         dollar_axis(ax)
         apply_style(fig, [ax])
         st.pyplot(fig)
@@ -1495,12 +1519,6 @@ with tab_alloc:
 
     # __ Subtab 4: Ticker Database ______________________________________________
     with dist_subtabs[3]:
-        st.caption(
-            "One table per portfolio ticker. Edit country and sector weights directly. "
-            "Weights are normalised automatically - no need to sum to 100 %. "
-            "Changes apply immediately to Country and Sector Distribution tabs."
-        )
-
         if "etf_custom_db" not in st.session_state:
             # Load from config file if present, else empty dict
             st.session_state["etf_custom_db"] = _cfg.get("etf_custom_db", {})
@@ -1560,84 +1578,111 @@ with tab_alloc:
                 if k in st.session_state:
                     del st.session_state[k]
 
+        def _resolve_editor_df(ticker, kind):
+            """
+            Return a proper DataFrame from the data_editor state.
+            Streamlit stores data_editor state as a dict of changes
+            {"edited_rows": {...}, "added_rows": [...], "deleted_rows": [...]},
+            not as a DataFrame. Apply those changes to the initial df.
+            """
+            tkey = ticker.upper()
+            key = f"etf_cty_{tkey}" if kind == "countries" else f"etf_sec_{tkey}"
+            initial_df = _build_initial_df(ticker, kind)
+            state = st.session_state.get(key)
+            if state is None or isinstance(state, pd.DataFrame):
+                return state if isinstance(state, pd.DataFrame) else initial_df
+            if isinstance(state, dict):
+                df = initial_df.copy()
+                for row_idx_str, changes in state.get("edited_rows", {}).items():
+                    row_idx = int(row_idx_str)
+                    for col, val in changes.items():
+                        if row_idx < len(df):
+                            df.at[row_idx, col] = val
+                for row in state.get("added_rows", []):
+                    df = pd.concat([df, pd.DataFrame([row])], ignore_index=True)
+                deleted = sorted(state.get("deleted_rows", []), reverse=True)
+                for row_idx in deleted:
+                    if row_idx < len(df):
+                        df = df.drop(index=row_idx).reset_index(drop=True)
+                return df
+            return initial_df
+
+        # ── Single Save All button ────────────────────────────────────────────
+        _save_col, _gap_col = st.columns([2, 10])
+        with _save_col:
+            if st.button("Save All", key="etf_save_all", type="primary", width=200):
+                _saved = []
+                for _t in available:
+                    _tkey = _t.upper()
+                    _cty_df = _resolve_editor_df(_t, "countries")
+                    _sec_df = _resolve_editor_df(_t, "sectors")
+                    _cty_parsed = _parse_weights(_cty_df, "Country")
+                    _sec_parsed = _parse_weights(_sec_df, "Sector")
+                    if _cty_parsed or _sec_parsed:
+                        _entry = {}
+                        if _cty_parsed:
+                            _entry["countries"] = _cty_parsed
+                        if _sec_parsed:
+                            _entry["sectors"] = _normalise_sectors(_sec_parsed)
+                        st.session_state["etf_custom_db"][_tkey] = _entry
+                        _reset_editor_cache(_t)
+                        _saved.append(_t)
+                if _saved:
+                    st.success(f"Saved: {', '.join(_saved)}")
+                    st.rerun(scope="app")
+                else:
+                    st.warning("No data to save — add at least one country or sector weight.")
+
         def _render_ticker_editor(ticker):
             tkey = ticker.upper()
+            in_custom = tkey in st.session_state["etf_custom_db"]
 
-            @st.fragment
-            def _fragment():
-                in_custom = tkey in st.session_state["etf_custom_db"]
-
+            hdr_col, _gap, clr_col = st.columns([4, 6, 2])
+            with hdr_col:
                 st.markdown(
                     f'<div class="section-header">{ticker}</div>',
                     unsafe_allow_html=True,
                 )
+            with clr_col:
+                if st.button(f"Clear {ticker}", key=f"etf_clr_{tkey}", width=200, disabled=not in_custom):
+                    del st.session_state["etf_custom_db"][tkey]
+                    _reset_editor_cache(ticker)
+                    for ek in (f"etf_cty_{tkey}", f"etf_sec_{tkey}"):
+                        if ek in st.session_state:
+                            del st.session_state[ek]
+                    st.rerun(scope="app")
 
-                ui_top    = st.container()
-                ui_tables = st.container()
+            col_cty, col_sec = st.columns(2)
 
-                with ui_tables:
-                    col_cty, col_sec = st.columns(2)
+            with col_cty:
+                st.caption("Country weights")
+                st.data_editor(
+                    _build_initial_df(ticker, "countries"),
+                    num_rows="dynamic",
+                    width='stretch',
+                    key=f"etf_cty_{tkey}",
+                    column_config={
+                        "Country":  st.column_config.TextColumn("Country", width="medium"),
+                        "Weight %": st.column_config.NumberColumn("Weight %", min_value=0.0, max_value=100.0, step=0.1, format="%.1f"),
+                    },
+                    hide_index=True,
+                )
 
-                    with col_cty:
-                        st.caption("Country weights")
-                        cty_df = st.data_editor(
-                            _build_initial_df(ticker, "countries"),
-                            num_rows="dynamic",
-                            width='stretch',
-                            key=f"etf_cty_{tkey}",
-                            column_config={
-                                "Country":  st.column_config.TextColumn("Country", width="medium"),
-                                "Weight %": st.column_config.NumberColumn("Weight %", min_value=0.0, max_value=100.0, step=0.1, format="%.1f"),
-                            },
-                            hide_index=True,
-                        )
+            with col_sec:
+                st.caption("Sector weights")
+                st.data_editor(
+                    _build_initial_df(ticker, "sectors"),
+                    num_rows="dynamic",
+                    width='stretch',
+                    key=f"etf_sec_{tkey}",
+                    column_config={
+                        "Sector":   st.column_config.SelectboxColumn("Sector", options=db._SECTOR_OPTIONS, width="medium"),
+                        "Weight %": st.column_config.NumberColumn("Weight %", min_value=0.0, max_value=100.0, step=0.1, format="%.1f"),
+                    },
+                    hide_index=True,
+                )
 
-                    with col_sec:
-                        st.caption("Sector weights")
-                        sec_df = st.data_editor(
-                            _build_initial_df(ticker, "sectors"),
-                            num_rows="dynamic",
-                            width='stretch',
-                            key=f"etf_sec_{tkey}",
-                            column_config={
-                                "Sector":   st.column_config.SelectboxColumn("Sector", options=db._SECTOR_OPTIONS, width="medium"),
-                                "Weight %": st.column_config.NumberColumn("Weight %", min_value=0.0, max_value=100.0, step=0.1, format="%.1f"),
-                            },
-                            hide_index=True,
-                        )
-
-                with ui_top:
-                    btn_col, _gap_col, clr_col = st.columns([1.5, 7, 1.5])
-                    with btn_col:
-                        if st.button(f"Save {ticker}", key=f"etf_save_{tkey}", width=200, type="primary"):
-                            cty_parsed = _parse_weights(cty_df, "Country")
-                            sec_parsed = _parse_weights(sec_df, "Sector")
-                            if not cty_parsed and not sec_parsed:
-                                st.error(f"{ticker}: enter at least one country or sector weight.")
-                            else:
-                                entry = {}
-                                if cty_parsed:
-                                    entry["countries"] = cty_parsed
-                                if sec_parsed:
-                                    entry["sectors"] = _normalise_sectors(sec_parsed)
-                                st.session_state["etf_custom_db"][tkey] = entry
-                                _reset_editor_cache(ticker)
-                                for ek in (f"etf_cty_{tkey}", f"etf_sec_{tkey}"):
-                                    if ek in st.session_state:
-                                        del st.session_state[ek]
-                                st.rerun(scope="app")
-                    with clr_col:
-                        if st.button(f"Clear {ticker}", key=f"etf_clr_{tkey}", width=200, disabled=not in_custom):
-                            del st.session_state["etf_custom_db"][tkey]
-                            _reset_editor_cache(ticker)
-                            for ek in (f"etf_cty_{tkey}", f"etf_sec_{tkey}"):
-                                if ek in st.session_state:
-                                    del st.session_state[ek]
-                            st.rerun(scope="app")
-
-                st.write("---")
-
-            _fragment()
+            st.write("---")
 
         for _t in available:
             _render_ticker_editor(_t)
