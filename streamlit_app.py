@@ -669,10 +669,10 @@ with tab_overview:
         _tc_str = ", ".join(f"{t} - {c}" for t,c in ticker_currencies.items() if t in available)
         _fx_note = ""
         if purchase_currency != portfolio_native_currency:
-            _fx_note += f" · {purchase_currency}→{portfolio_native_currency} @ {fx_purchase_to_native:.4f}"
+            _fx_note += f" {purchase_currency} → {portfolio_native_currency} @ {fx_purchase_to_native:.4f}"
         if portfolio_native_currency != display_currency:
-            _fx_note += f" · {portfolio_native_currency}→{display_currency} @ {fx_native_to_display:.4f}"
-        st.caption(f"Ticker currencies: {_tc_str} | Portfolio native: {portfolio_native_currency} | Display: {display_currency}{_fx_note}")
+            _fx_note += f" {portfolio_native_currency} → {display_currency} @ {fx_native_to_display:.4f}"
+        st.caption(f"Ticker currencies: {_tc_str} | Portfolio native: {portfolio_native_currency} | Display: {display_currency} | {_fx_note}")
         pv_col1, pv_col2, pv_col3 = st.columns(3)
         with pv_col1:
             st.markdown(f"""<div class="metric-card">
