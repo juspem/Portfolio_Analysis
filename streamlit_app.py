@@ -1,30 +1,32 @@
-import streamlit as st
-import pandas as pd
-import numpy as np
-import yfinance as yf
-import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
+import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
-import seaborn as sns
+import numpy as np
+import pandas as pd
 import quantstats as qs
-from datetime import datetime, timedelta, date
-from itertools import combinations
-from collections import defaultdict
+import requests
+import seaborn as sns
+import statsmodels as sm
+import streamlit as st
+import yfinance as yf
 from matplotlib.colors import LinearSegmentedColormap
 from matplotlib.ticker import MaxNLocator
+
 import colorsys as _colorsys
-import warnings
+import gc
 import io
+import json
 import os
 import tempfile
-import requests
-import gc
+import warnings
+from collections import defaultdict
+from datetime import date, datetime, timedelta
+from itertools import combinations
+
 import database as db
+import my_portfolio as _p
 
 warnings.filterwarnings('ignore')
-
-import my_portfolio as _p
-import json
 
 # 1. Create a session that looks like a regular browser
 @st.cache_resource
@@ -995,8 +997,6 @@ with tab_bench:
 
         # Rolling Beta
         st.markdown('<div class="section-header">252-Day Rolling Beta</div>', unsafe_allow_html=True)
-
-        import statsmodels.api as sm
 
         def rolling_beta_ols(p_ret, b_ret, window=252, min_obs=100):
             """
